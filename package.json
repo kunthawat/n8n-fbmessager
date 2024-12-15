@@ -32,7 +32,8 @@
 			"dist/credentials/FacebookMessengerApi.credentials.js"
 		],
 		"nodes": [
-			"dist/nodes/FacebookMessenger/FacebookMessenger.node.js"
+			"dist/nodes/FacebookMessenger/FacebookMessenger.node.js",
+			"dist/nodes/FacebookMessenger/FacebookMessengerTrigger.node.js"
 		]
 	},
 	"devDependencies": {
