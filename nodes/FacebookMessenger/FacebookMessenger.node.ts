@@ -1,240 +1,211 @@
-import type {
-	IExecuteFunctions,
-	IDataObject,
-	INodeExecutionData,
-	INodeType,
-	INodeTypeDescription,
+// nodes/FacebookMessenger/FacebookMessenger.node.ts
+import {
+    IExecuteFunctions,
+    INodeExecutionData,
+    INodeType,
+    INodeTypeDescription,
+    IDataObject,
+    IHttpRequestMethods,
+    NodeConnectionType,
 } from 'n8n-workflow';
 
 export class FacebookMessenger implements INodeType {
-	description: INodeTypeDescription = {
-		// Basic node information
-		displayName: 'Facebook Messenger',
-		name: 'facebookMessenger',
-		icon: 'file:messenger.svg',
-		group: ['communication'],
-		version: 1,
-		description: 'Send messages through Facebook Messenger',
-		defaults: {
-			name: 'Facebook Messenger',
-		},
+    description: INodeTypeDescription = {
+        displayName: 'Facebook Messenger',
+        name: 'facebookMessenger',
+        icon: 'file:messenger.svg',
+        group: ['output'],
+        version: 1,
+        subtitle: '={{$parameter["operation"]}}',
+        description: 'Send messages through Facebook Messenger',
+        defaults: {
+            name: 'Facebook Messenger',
+        },
+        // Using NodeConnectionType.Main for inputs/outputs
+        inputs: [{
+            type: NodeConnectionType.Main,
+        }],
+        outputs: [{
+            type: NodeConnectionType.Main,
+        }],
+        credentials: [
+            {
+                name: 'facebookMessengerApi',
+                required: true,
+            },
+        ],
+        properties: [
+            {
+                displayName: 'Operation',
+                name: 'operation',
+                type: 'options',
+                noDataExpression: true,
+                options: [
+                    {
+                        name: 'Send Message',
+                        value: 'sendMessage',
+                        description: 'Send a message to a user',
+                        action: 'Send a message',
+                    },
+                ],
+                default: 'sendMessage',
+            },
+            {
+                displayName: 'Recipient ID',
+                name: 'recipientId',
+                type: 'string',
+                required: true,
+                default: '',
+                description: 'PSID of the message recipient',
+            },
+            {
+                displayName: 'Message Type',
+                name: 'messageType',
+                type: 'options',
+                options: [
+                    {
+                        name: 'Text',
+                        value: 'text',
+                    },
+                    {
+                        name: 'Media',
+                        value: 'media',
+                    },
+                ],
+                default: 'text',
+                description: 'Type of message to send',
+            },
+            {
+                displayName: 'Message Text',
+                name: 'messageText',
+                type: 'string',
+                displayOptions: {
+                    show: {
+                        messageType: ['text'],
+                    },
+                },
+                default: '',
+                description: 'Text message to send',
+            },
+            {
+                displayName: 'Media Type',
+                name: 'mediaType',
+                type: 'options',
+                displayOptions: {
+                    show: {
+                        messageType: ['media'],
+                    },
+                },
+                options: [
+                    {
+                        name: 'Image',
+                        value: 'image',
+                    },
+                    {
+                        name: 'Video',
+                        value: 'video',
+                    },
+                    {
+                        name: 'Audio',
+                        value: 'audio',
+                    },
+                ],
+                default: 'image',
+                description: 'Type of media to send',
+            },
+            {
+                displayName: 'Media URL',
+                name: 'mediaUrl',
+                type: 'string',
+                displayOptions: {
+                    show: {
+                        messageType: ['media'],
+                    },
+                },
+                default: '',
+                description: 'URL of the media to send',
+            },
+        ],
+    };
 
-		// Define input and output
-		inputs: ['main'],
-		outputs: ['main'],
+    async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
+        const items = this.getInputData();
+        const returnData: INodeExecutionData[] = [];
+        const length = items.length;
 
-		// Credentials
-		credentials: [
-			{
-				name: 'facebookMessengerApi',
-				required: true,
-			},
-		],
+        for (let i = 0; i < length; i++) {
+            try {
+                const credentials = await this.getCredentials('facebookMessengerApi') as {
+                    accessToken: string;
+                    pageId: string;
+                };
 
-		// Properties
-		properties: [
-			// Operations
-			{
-				displayName: 'Resource',
-				name: 'resource',
-				type: 'options',
-				noDataExpression: true,
-				options: [
-					{
-						name: 'Message',
-						value: 'message',
-					},
-				],
-				default: 'message',
-			},
-			{
-				displayName: 'Operation',
-				name: 'operation',
-				type: 'options',
-				noDataExpression: true,
-				displayOptions: {
-					show: {
-						resource: ['message'],
-					},
-				},
-				options: [
-					{
-						name: 'Send',
-						value: 'send',
-						description: 'Send a message to a user',
-						action: 'Send a message',
-					},
-				],
-				default: 'send',
-			},
+                const operation = this.getNodeParameter('operation', i) as string;
+                const recipientId = this.getNodeParameter('recipientId', i) as string;
+                const messageType = this.getNodeParameter('messageType', i) as string;
 
-			// Fields
-			{
-				displayName: 'Message Type',
-				name: 'messageType',
-				type: 'options',
-				required: true,
-				options: [
-					{
-						name: 'Text',
-						value: 'text',
-					},
-					{
-						name: 'Media',
-						value: 'media',
-					},
-				],
-				displayOptions: {
-					show: {
-						operation: ['send'],
-						resource: ['message'],
-					},
-				},
-				default: 'text',
-			},
-			{
-				displayName: 'Recipient ID',
-				name: 'recipientId',
-				type: 'string',
-				required: true,
-				displayOptions: {
-					show: {
-						operation: ['send'],
-						resource: ['message'],
-					},
-				},
-				default: '',
-				description: 'PSID of the message recipient',
-			},
-			{
-				displayName: 'Message Text',
-				name: 'messageText',
-				type: 'string',
-				required: true,
-				displayOptions: {
-					show: {
-						operation: ['send'],
-						resource: ['message'],
-						messageType: ['text'],
-					},
-				},
-				default: '',
-				description: 'Text to send',
-			},
-			{
-				displayName: 'Media Type',
-				name: 'mediaType',
-				type: 'options',
-				required: true,
-				options: [
-					{
-						name: 'Image',
-						value: 'image',
-					},
-					{
-						name: 'Video',
-						value: 'video',
-					},
-					{
-						name: 'Audio',
-						value: 'audio',
-					},
-					{
-						name: 'File',
-						value: 'file',
-					},
-				],
-				displayOptions: {
-					show: {
-						operation: ['send'],
-						resource: ['message'],
-						messageType: ['media'],
-					},
-				},
-				default: 'image',
-			},
-			{
-				displayName: 'Media URL',
-				name: 'mediaUrl',
-				type: 'string',
-				required: true,
-				displayOptions: {
-					show: {
-						operation: ['send'],
-						resource: ['message'],
-						messageType: ['media'],
-					},
-				},
-				default: '',
-				description: 'URL of the media to send',
-			},
-		],
-	};
+                let messageData: IDataObject = {};
 
-	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
-		const items = this.getInputData();
-		const returnData: IDataObject[] = [];
+                if (messageType === 'text') {
+                    const messageText = this.getNodeParameter('messageText', i) as string;
+                    messageData = { text: messageText };
+                } else if (messageType === 'media') {
+                    const mediaType = this.getNodeParameter('mediaType', i) as string;
+                    const mediaUrl = this.getNodeParameter('mediaUrl', i) as string;
+                    messageData = {
+                        attachment: {
+                            type: mediaType,
+                            payload: {
+                                url: mediaUrl,
+                                is_reusable: true,
+                            },
+                        },
+                    };
+                }
 
-		const resource = this.getNodeParameter('resource', 0) as string;
-		const operation = this.getNodeParameter('operation', 0) as string;
+                const body = {
+                    recipient: { id: recipientId },
+                    messaging_type: 'RESPONSE',
+                    message: messageData,
+                };
 
-		for (let i = 0; i < items.length; i++) {
-			try {
-				if (resource === 'message') {
-					if (operation === 'send') {
-						const messageType = this.getNodeParameter('messageType', i) as string;
-						const recipientId = this.getNodeParameter('recipientId', i) as string;
+                const requestOptions = {
+                    method: 'POST' as IHttpRequestMethods,
+                    url: `https://graph.facebook.com/v21.0/${credentials.pageId}/messages`,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    qs: {
+                        access_token: credentials.accessToken,
+                    },
+                    body,
+                    json: true,
+                };
 
-						const body: IDataObject = {
-							recipient: { id: recipientId },
-							messaging_type: 'RESPONSE',
-						};
+                const response = await this.helpers.request(requestOptions);
 
-						if (messageType === 'text') {
-							const messageText = this.getNodeParameter('messageText', i) as string;
-							body.message = { text: messageText };
-						} else if (messageType === 'media') {
-							const mediaType = this.getNodeParameter('mediaType', i) as string;
-							const mediaUrl = this.getNodeParameter('mediaUrl', i) as string;
+                returnData.push({
+                    json: response as IDataObject,
+                    pairedItem: {
+                        item: i,
+                    },
+                });
+            } catch (error) {
+                if (this.continueOnFail()) {
+                    returnData.push({
+                        json: {
+                            error: (error as Error).message,
+                        },
+                        pairedItem: {
+                            item: i,
+                        },
+                    });
+                    continue;
+                }
+                throw error;
+            }
+        }
 
-							body.message = {
-								attachment: {
-									type: mediaType,
-									payload: {
-										url: mediaUrl,
-										is_reusable: true,
-									},
-								},
-							};
-						}
-
-						// Get credentials
-						const credentials = await this.getCredentials('facebookMessengerApi');
-
-						// Make API request
-						const options = {
-							method: 'POST',
-							uri: `https://graph.facebook.com/v21.0/${credentials.pageId}/messages`,
-							qs: {
-								access_token: credentials.accessToken,
-							},
-							body,
-							json: true,
-						};
-
-						const response = await this.helpers.request(options);
-						returnData.push(response as IDataObject);
-					}
-				}
-			} catch (error) {
-				if (this.continueOnFail()) {
-					returnData.push({ error: error.message });
-					continue;
-				}
-				throw error;
-			}
-		}
-
-		return [this.helpers.returnJsonArray(returnData)];
-	}
+        return [returnData];
+    }
 }
