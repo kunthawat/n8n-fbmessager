@@ -13,7 +13,7 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/yourusername/n8n-nodes-facebook-messenger.git"
+		"url": "https://github.com/kunthawat/n8n-fbmessager.git"
 	},
 	"main": "index.js",
 	"scripts": {
