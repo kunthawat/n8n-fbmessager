@@ -25,5 +25,16 @@ export class FacebookMessengerApi implements ICredentialType {
             default: '',
             required: true,
         },
+        {
+            displayName: 'Verify Token',
+            name: 'verifyToken',
+            type: 'string',
+            typeOptions: {
+                password: true,
+            },
+            default: '',
+            required: true,
+            description: 'Token to verify webhook subscription with Facebook',
+        },
     ];
 }
