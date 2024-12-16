@@ -6,6 +6,7 @@ import {
     INodeTypeDescription,
     IWebhookResponseData,
     NodeConnectionType,
+    LoggerProxy,
 } from 'n8n-workflow';
 
 interface IFacebookCredentials {
@@ -101,16 +102,15 @@ export class FacebookMessengerTrigger implements INodeType {
     async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
         try {
             const credentials = await this.getCredentials('facebookMessengerApi') as IFacebookCredentials;
-            
-            if (!credentials?.verifyToken) {
-                throw new Error('No credentials were provided!');
-            }
-
             const httpMethod = this.getNodeParameter('httpMethod') as string;
+
+            // Debug logging
+            LoggerProxy.debug('Facebook Messenger Trigger: Received webhook call', { httpMethod });
 
             // Handle GET requests (webhook verification)
             if (httpMethod === 'GET') {
                 const query = this.getQueryData() as IDataObject;
+                LoggerProxy.debug('Facebook Messenger Trigger: Handling GET request', { query });
 
                 if (query['hub.mode'] === 'subscribe' && query['hub.verify_token'] === credentials.verifyToken) {
                     return {
@@ -125,35 +125,57 @@ export class FacebookMessengerTrigger implements INodeType {
 
             // Handle POST requests (incoming messages)
             const bodyData = this.getBodyData() as IDataObject;
+            LoggerProxy.debug('Facebook Messenger Trigger: Received POST data', { bodyData });
 
-            // Verify that this is a page subscription
+            // Early return if not a page subscription
             if (bodyData.object !== 'page') {
+                LoggerProxy.debug('Facebook Messenger Trigger: Not a page subscription', { object: bodyData.object });
                 return {
-                    webhookResponse: 'Not a page subscription',
+                    webhookResponse: 'OK',
                 };
             }
 
-            const events = this.getNodeParameter('events', []) as string[];
-            const returnData: IDataObject[] = [];
+            const selectedEvents = this.getNodeParameter('events', []) as string[];
+            LoggerProxy.debug('Facebook Messenger Trigger: Selected events', { selectedEvents });
 
+            const returnData: IDataObject[] = [];
             const entries = bodyData.entry as IDataObject[];
+
             if (entries?.length) {
                 for (const entry of entries) {
+                    LoggerProxy.debug('Facebook Messenger Trigger: Processing entry', { entry });
+                    
+                    // Verify if this message is for our page
+                    if (entry.id !== credentials.pageId) {
+                        LoggerProxy.debug('Facebook Messenger Trigger: Skipping entry - wrong page ID', {
+                            received: entry.id,
+                            expected: credentials.pageId,
+                        });
+                        continue;
+                    }
+
                     const messaging = entry.messaging as IDataObject[];
                     if (messaging?.length) {
                         for (const message of messaging) {
+                            LoggerProxy.debug('Facebook Messenger Trigger: Processing message', { message });
+
                             let eventType = '';
-                            if (message.message && !(message.message as IDataObject).is_echo) {
-                                eventType = 'messages';
-                            } else if (message.message && (message.message as IDataObject).is_echo) {
-                                eventType = 'message_echoes';
+                            // Determine event type
+                            if (message.message) {
+                                const messageData = message.message as IDataObject;
+                                eventType = messageData.is_echo ? 'message_echoes' : 'messages';
                             } else if (message.delivery) {
                                 eventType = 'message_deliveries';
                             } else if (message.read) {
                                 eventType = 'message_reads';
                             }
 
-                            if (events.includes(eventType)) {
+                            LoggerProxy.debug('Facebook Messenger Trigger: Determined event type', { 
+                                eventType, 
+                                isSelected: selectedEvents.includes(eventType) 
+                            });
+
+                            if (selectedEvents.includes(eventType)) {
                                 returnData.push({
                                     timestamp: entry.time || Date.now(),
                                     pageId: entry.id,
@@ -168,6 +190,10 @@ export class FacebookMessengerTrigger implements INodeType {
                 }
             }
 
+            LoggerProxy.debug('Facebook Messenger Trigger: Processing complete', { 
+                returnDataLength: returnData.length 
+            });
+
             if (returnData.length === 0) {
                 return {
                     webhookResponse: 'OK',
@@ -180,9 +206,9 @@ export class FacebookMessengerTrigger implements INodeType {
             };
 
         } catch (error) {
-            console.error('Error in Facebook Messenger Trigger:', error);
+            LoggerProxy.error('Facebook Messenger Trigger: Error occurred', { error });
             return {
-                webhookResponse: 'Error processing webhook',
+                webhookResponse: 'OK', // Always return OK to Facebook
             };
         }
     }
