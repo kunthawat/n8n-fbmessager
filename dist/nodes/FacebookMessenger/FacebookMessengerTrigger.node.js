@@ -23,12 +23,14 @@ class FacebookMessengerTrigger {
                     required: true,
                 },
             ],
-            webhooks: [{
+            webhooks: [
+                {
                     name: 'default',
                     httpMethod: '={{$parameter["httpMethod"]}}',
                     responseMode: 'onReceived',
                     path: 'webhook',
-                }],
+                },
+            ],
             properties: [
                 {
                     displayName: 'HTTP Method',
@@ -86,32 +88,39 @@ class FacebookMessengerTrigger {
     }
     async webhook() {
         var _a, _b;
-        const httpMethod = this.getNodeParameter('httpMethod');
-        const credentials = await this.getCredentials('facebookMessengerApi');
-        // Handle GET requests (webhook verification)
-        if (httpMethod === 'GET') {
-            const query = this.getQueryData();
-            if (query['hub.mode'] === 'subscribe') {
-                if (query['hub.verify_token'] === credentials.verifyToken) {
+        try {
+            const credentials = await this.getCredentials('facebookMessengerApi');
+            if (!(credentials === null || credentials === void 0 ? void 0 : credentials.verifyToken)) {
+                throw new Error('No credentials were provided!');
+            }
+            const httpMethod = this.getNodeParameter('httpMethod');
+            // Handle GET requests (webhook verification)
+            if (httpMethod === 'GET') {
+                const query = this.getQueryData();
+                if (query['hub.mode'] === 'subscribe' && query['hub.verify_token'] === credentials.verifyToken) {
                     return {
                         webhookResponse: query['hub.challenge'],
                     };
                 }
+                return {
+                    webhookResponse: 'Verification failed',
+                };
             }
-            return {
-                webhookResponse: 'Verification failed',
-            };
-        }
-        // Handle POST requests (incoming messages)
-        const bodyData = this.getBodyData();
-        const events = this.getNodeParameter('events');
-        const returnData = [];
-        if (bodyData.object === 'page') {
+            // Handle POST requests (incoming messages)
+            const bodyData = this.getBodyData();
+            // Verify that this is a page subscription
+            if (bodyData.object !== 'page') {
+                return {
+                    webhookResponse: 'Not a page subscription',
+                };
+            }
+            const events = this.getNodeParameter('events', []);
+            const returnData = [];
             const entries = bodyData.entry;
-            if (entries) {
+            if (entries === null || entries === void 0 ? void 0 : entries.length) {
                 for (const entry of entries) {
                     const messaging = entry.messaging;
-                    if (messaging) {
+                    if (messaging === null || messaging === void 0 ? void 0 : messaging.length) {
                         for (const message of messaging) {
                             let eventType = '';
                             if (message.message && !message.message.is_echo) {
@@ -140,16 +149,22 @@ class FacebookMessengerTrigger {
                     }
                 }
             }
-        }
-        if (returnData.length === 0) {
+            if (returnData.length === 0) {
+                return {
+                    webhookResponse: 'OK',
+                };
+            }
             return {
+                workflowData: [this.helpers.returnJsonArray(returnData)],
                 webhookResponse: 'OK',
             };
         }
-        return {
-            workflowData: [this.helpers.returnJsonArray(returnData)],
-            webhookResponse: 'OK',
-        };
+        catch (error) {
+            console.error('Error in Facebook Messenger Trigger:', error);
+            return {
+                webhookResponse: 'Error processing webhook',
+            };
+        }
     }
 }
 exports.FacebookMessengerTrigger = FacebookMessengerTrigger;

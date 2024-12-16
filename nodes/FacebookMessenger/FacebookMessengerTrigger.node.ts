@@ -8,6 +8,12 @@ import {
     NodeConnectionType,
 } from 'n8n-workflow';
 
+interface IFacebookCredentials {
+    pageId: string;
+    accessToken: string;
+    verifyToken: string;
+}
+
 export class FacebookMessengerTrigger implements INodeType {
     description: INodeTypeDescription = {
         displayName: 'Facebook Messenger Trigger',
@@ -29,12 +35,14 @@ export class FacebookMessengerTrigger implements INodeType {
                 required: true,
             },
         ],
-        webhooks: [{
-            name: 'default',
-            httpMethod: '={{$parameter["httpMethod"]}}',
-            responseMode: 'onReceived',
-            path: 'webhook',
-        }],
+        webhooks: [
+            {
+                name: 'default',
+                httpMethod: '={{$parameter["httpMethod"]}}',
+                responseMode: 'onReceived',
+                path: 'webhook',
+            },
+        ],
         properties: [
             {
                 displayName: 'HTTP Method',
@@ -91,42 +99,48 @@ export class FacebookMessengerTrigger implements INodeType {
     };
 
     async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
-        const httpMethod = this.getNodeParameter('httpMethod') as string;
-        const credentials = await this.getCredentials('facebookMessengerApi') as {
-            verifyToken: string;
-            pageId: string;
-            accessToken: string;
-        };
+        try {
+            const credentials = await this.getCredentials('facebookMessengerApi') as IFacebookCredentials;
+            
+            if (!credentials?.verifyToken) {
+                throw new Error('No credentials were provided!');
+            }
 
-        // Handle GET requests (webhook verification)
-        if (httpMethod === 'GET') {
-            const query = this.getQueryData() as IDataObject;
+            const httpMethod = this.getNodeParameter('httpMethod') as string;
 
-            if (query['hub.mode'] === 'subscribe') {
-                if (query['hub.verify_token'] === credentials.verifyToken) {
+            // Handle GET requests (webhook verification)
+            if (httpMethod === 'GET') {
+                const query = this.getQueryData() as IDataObject;
+
+                if (query['hub.mode'] === 'subscribe' && query['hub.verify_token'] === credentials.verifyToken) {
                     return {
                         webhookResponse: query['hub.challenge'] as string,
                     };
                 }
+
+                return {
+                    webhookResponse: 'Verification failed',
+                };
             }
 
-            return {
-                webhookResponse: 'Verification failed',
-            };
-        }
+            // Handle POST requests (incoming messages)
+            const bodyData = this.getBodyData() as IDataObject;
 
-        // Handle POST requests (incoming messages)
-        const bodyData = this.getBodyData() as IDataObject;
-        const events = this.getNodeParameter('events') as string[];
-        const returnData: IDataObject[] = [];
+            // Verify that this is a page subscription
+            if (bodyData.object !== 'page') {
+                return {
+                    webhookResponse: 'Not a page subscription',
+                };
+            }
 
-        if (bodyData.object === 'page') {
+            const events = this.getNodeParameter('events', []) as string[];
+            const returnData: IDataObject[] = [];
+
             const entries = bodyData.entry as IDataObject[];
-            
-            if (entries) {
+            if (entries?.length) {
                 for (const entry of entries) {
                     const messaging = entry.messaging as IDataObject[];
-                    if (messaging) {
+                    if (messaging?.length) {
                         for (const message of messaging) {
                             let eventType = '';
                             if (message.message && !(message.message as IDataObject).is_echo) {
@@ -153,17 +167,23 @@ export class FacebookMessengerTrigger implements INodeType {
                     }
                 }
             }
-        }
 
-        if (returnData.length === 0) {
+            if (returnData.length === 0) {
+                return {
+                    webhookResponse: 'OK',
+                };
+            }
+
             return {
+                workflowData: [this.helpers.returnJsonArray(returnData)],
                 webhookResponse: 'OK',
             };
-        }
 
-        return {
-            workflowData: [this.helpers.returnJsonArray(returnData)],
-            webhookResponse: 'OK',
-        };
+        } catch (error) {
+            console.error('Error in Facebook Messenger Trigger:', error);
+            return {
+                webhookResponse: 'Error processing webhook',
+            };
+        }
     }
 }
