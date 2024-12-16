@@ -17,7 +17,12 @@ class FacebookMessengerTrigger {
             outputs: [{
                     type: "main" /* NodeConnectionType.Main */,
                 }],
-            // Changed webhook to webhooks
+            credentials: [
+                {
+                    name: 'facebookMessengerApi',
+                    required: true,
+                },
+            ],
             webhooks: [{
                     name: 'default',
                     httpMethod: '={{$parameter["httpMethod"]}}',
@@ -79,15 +84,14 @@ class FacebookMessengerTrigger {
             ],
         };
     }
-    // Method to execute when webhook is called
     async webhook() {
         var _a, _b;
         const httpMethod = this.getNodeParameter('httpMethod');
+        const credentials = await this.getCredentials('facebookMessengerApi');
         // Handle GET requests (webhook verification)
         if (httpMethod === 'GET') {
             const query = this.getQueryData();
             if (query['hub.mode'] === 'subscribe') {
-                const credentials = await this.getCredentials('facebookMessengerApi');
                 if (query['hub.verify_token'] === credentials.verifyToken) {
                     return {
                         webhookResponse: query['hub.challenge'],

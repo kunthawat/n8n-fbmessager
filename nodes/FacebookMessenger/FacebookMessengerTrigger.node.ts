@@ -23,7 +23,12 @@ export class FacebookMessengerTrigger implements INodeType {
         outputs: [{
             type: NodeConnectionType.Main,
         }],
-        // Changed webhook to webhooks
+        credentials: [
+            {
+                name: 'facebookMessengerApi',
+                required: true,
+            },
+        ],
         webhooks: [{
             name: 'default',
             httpMethod: '={{$parameter["httpMethod"]}}',
@@ -85,19 +90,19 @@ export class FacebookMessengerTrigger implements INodeType {
         ],
     };
 
-    // Method to execute when webhook is called
     async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
         const httpMethod = this.getNodeParameter('httpMethod') as string;
+        const credentials = await this.getCredentials('facebookMessengerApi') as {
+            verifyToken: string;
+            pageId: string;
+            accessToken: string;
+        };
 
         // Handle GET requests (webhook verification)
         if (httpMethod === 'GET') {
             const query = this.getQueryData() as IDataObject;
 
             if (query['hub.mode'] === 'subscribe') {
-                const credentials = await this.getCredentials('facebookMessengerApi') as {
-                    verifyToken: string;
-                };
-
                 if (query['hub.verify_token'] === credentials.verifyToken) {
                     return {
                         webhookResponse: query['hub.challenge'] as string,
