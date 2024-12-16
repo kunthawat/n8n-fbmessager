@@ -6,7 +6,18 @@ import {
 	NodeConnectionType,
 	IDataObject,
 	INodeExecutionData,
+	ICredentialTestFunctions,
+	INodeCredentialTestResult,
+	IHttpRequestOptions,
+	ICredentialsDecrypted,
+	ICredentialDataDecryptedObject,
 } from 'n8n-workflow';
+
+interface IFacebookQueryData {
+	'hub.mode': string;
+	'hub.verify_token': string;
+	'hub.challenge': string;
+}
 
 export class FacebookMessengerTrigger implements INodeType {
 	description: INodeTypeDescription = {
@@ -15,7 +26,8 @@ export class FacebookMessengerTrigger implements INodeType {
 		icon: 'file:facebook.svg',
 		group: ['trigger'],
 		version: 1,
-		description: 'Starts the workflow when Facebook Messenger events occur',
+		subtitle: '={{$parameter["operation"]}}',
+		description: 'Handle Facebook Messenger webhook events',
 		defaults: {
 			name: 'Facebook Messenger Trigger',
 		},
@@ -28,6 +40,12 @@ export class FacebookMessengerTrigger implements INodeType {
 			},
 		],
 		webhooks: [
+			{
+				name: 'default',
+				httpMethod: 'GET',
+				responseMode: 'onReceived',
+				path: 'webhook',
+			},
 			{
 				name: 'default',
 				httpMethod: 'POST',
@@ -56,6 +74,11 @@ export class FacebookMessengerTrigger implements INodeType {
 						value: 'message_deliveries',
 						description: 'Trigger when a message is delivered',
 					},
+					{
+						name: 'Postback',
+						value: 'messaging_postbacks',
+						description: 'Trigger when a postback is received',
+					},
 				],
 				default: ['messages'],
 				required: true,
@@ -63,55 +86,149 @@ export class FacebookMessengerTrigger implements INodeType {
 		],
 	};
 
+	methods = {
+		credentialTest: {
+			async facebookApiTest(
+				this: ICredentialTestFunctions,
+				credential: ICredentialsDecrypted<ICredentialDataDecryptedObject>,
+			): Promise<INodeCredentialTestResult> {
+				const { accessToken } = credential.data as { accessToken?: string };
+
+				if (!accessToken) {
+					return {
+						status: 'Error',
+						message: 'Access Token is required!',
+					};
+				}
+
+				const options: IHttpRequestOptions = {
+					url: `https://graph.facebook.com/v13.0/me`,
+					qs: {
+						access_token: accessToken,
+					},
+					method: 'GET',
+					json: true,
+				};
+
+				try {
+					await this.helpers.request(options);
+					return {
+						status: 'OK',
+						message: 'Authentication successful!',
+					};
+				} catch (error) {
+					return {
+						status: 'Error',
+						message: error.message,
+					};
+				}
+			},
+		},
+	};
+
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
 		const req = this.getRequestObject();
-		const headerData = this.getHeaderData();
+		const credentials = await this.getCredentials('facebookApi');
 		const events = this.getNodeParameter('events') as string[];
 
-		// Verify webhook
-		if (req.method === 'GET') {
-			const mode = headerData['hub.mode'];
-			const token = headerData['hub.verify_token'];
-			const challenge = headerData['hub.challenge'];
+		if (!credentials?.verifyToken) {
+			throw new Error('Verify Token is required!');
+		}
 
-			if (mode === 'subscribe' && token === process.env.FACEBOOK_VERIFY_TOKEN) {
+		// Handle GET request (webhook verification)
+		if (req.method === 'GET') {
+			const query = this.getQueryData() as IFacebookQueryData;
+			const mode = query['hub.mode'];
+			const token = query['hub.verify_token'];
+			const challenge = query['hub.challenge'];
+
+			// Check if the mode and token are correct
+			if (mode === 'subscribe' && token === credentials.verifyToken) {
 				return {
 					webhookResponse: challenge,
 				};
+			} else {
+				return {
+					webhookResponse: 'Forbidden',
+				};
 			}
-			return {
-				webhookResponse: 'Forbidden',
-			};
 		}
 
-		// Process webhook payload
-		const body = this.getBodyData() as IDataObject;
-		if (body.object === 'page') {
-			const returnData: INodeExecutionData[] = [];
-			const entries = body.entry as IDataObject[];
+		// Handle POST request (webhook events)
+		if (req.method === 'POST') {
+			const body = this.getBodyData() as IDataObject;
 
-			for (const entry of entries) {
-				const messaging = (entry.messaging as IDataObject[])[0];
+			if (body.object === 'page') {
+				const returnData: INodeExecutionData[] = [];
+				const entries = body.entry as IDataObject[];
 
-				if (messaging.message && events.includes('messages')) {
-					returnData.push({
-						json: {
-							messageId: (messaging.message as IDataObject).mid,
-							messageText: (messaging.message as IDataObject).text,
-							senderId: (messaging.sender as IDataObject).id,
-							recipientId: (messaging.recipient as IDataObject).id,
-							timestamp: messaging.timestamp,
-							eventType: 'message_received',
-						},
-					});
+				for (const entry of entries) {
+					const messaging = (entry.messaging as IDataObject[])[0];
+
+					// Handle message events
+					if (messaging.message && events.includes('messages')) {
+						returnData.push({
+							json: {
+								messageId: (messaging.message as IDataObject).mid,
+								messageText: (messaging.message as IDataObject).text,
+								senderId: (messaging.sender as IDataObject).id,
+								recipientId: (messaging.recipient as IDataObject).id,
+								timestamp: messaging.timestamp,
+								eventType: 'message_received',
+								rawData: messaging,
+							},
+						});
+					}
+
+					// Handle message_read events
+					if (messaging.read && events.includes('message_reads')) {
+						returnData.push({
+							json: {
+								watermark: (messaging.read as IDataObject).watermark,
+								senderId: (messaging.sender as IDataObject).id,
+								recipientId: (messaging.recipient as IDataObject).id,
+								timestamp: messaging.timestamp,
+								eventType: 'message_read',
+								rawData: messaging,
+							},
+						});
+					}
+
+					// Handle message_delivered events
+					if (messaging.delivery && events.includes('message_deliveries')) {
+						returnData.push({
+							json: {
+								watermark: (messaging.delivery as IDataObject).watermark,
+								senderId: (messaging.sender as IDataObject).id,
+								recipientId: (messaging.recipient as IDataObject).id,
+								timestamp: messaging.timestamp,
+								eventType: 'message_delivered',
+								rawData: messaging,
+							},
+						});
+					}
+
+					// Handle postback events
+					if (messaging.postback && events.includes('messaging_postbacks')) {
+						returnData.push({
+							json: {
+								payload: (messaging.postback as IDataObject).payload,
+								senderId: (messaging.sender as IDataObject).id,
+								recipientId: (messaging.recipient as IDataObject).id,
+								timestamp: messaging.timestamp,
+								eventType: 'postback',
+								rawData: messaging,
+							},
+						});
+					}
 				}
-			}
 
-			if (returnData.length) {
-				return {
-					webhookResponse: { success: true },
-					workflowData: [returnData], // Wrap returnData in an array to match INodeExecutionData[][]
-				};
+				if (returnData.length) {
+					return {
+						webhookResponse: { success: true },
+						workflowData: [returnData],
+					};
+				}
 			}
 		}
 

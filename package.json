@@ -17,18 +17,21 @@
     },
     "main": "index.js",
     "scripts": {
-      "build": "tsc && cp -r nodes/*/facebook.svg dist/nodes/*/",
-      "dev": "tsc --watch",
-      "format": "prettier nodes --write",
-      "lint": "eslint nodes package.json",
-      "lintfix": "eslint nodes package.json --fix",
-      "prepublishOnly": "npm run build && npm run lint -c .eslintrc.js"
-    },
+        "build": "tsc && node scripts/copyIcons.js",
+        "dev": "tsc --watch",
+        "format": "prettier nodes --write",
+        "lint": "eslint nodes package.json",
+        "lintfix": "eslint nodes package.json --fix",
+        "prepublishOnly": "npm run build && npm run lint -c .eslintrc.js"
+      },
     "files": [
       "dist"
     ],
     "n8n": {
       "n8nNodesApiVersion": 1,
+      "credentials": [
+        "dist/credentials/FacebookApi.credentials.js"
+      ],
       "nodes": [
         "dist/nodes/FacebookMessengerTrigger/FacebookMessengerTrigger.node.js",
         "dist/nodes/FacebookMessengerAction/FacebookMessengerAction.node.js"

@@ -9,7 +9,8 @@ class FacebookMessengerTrigger {
             icon: 'file:facebook.svg',
             group: ['trigger'],
             version: 1,
-            description: 'Starts the workflow when Facebook Messenger events occur',
+            subtitle: '={{$parameter["operation"]}}',
+            description: 'Handle Facebook Messenger webhook events',
             defaults: {
                 name: 'Facebook Messenger Trigger',
             },
@@ -22,6 +23,12 @@ class FacebookMessengerTrigger {
                 },
             ],
             webhooks: [
+                {
+                    name: 'default',
+                    httpMethod: 'GET',
+                    responseMode: 'onReceived',
+                    path: 'webhook',
+                },
                 {
                     name: 'default',
                     httpMethod: 'POST',
@@ -50,54 +57,138 @@ class FacebookMessengerTrigger {
                             value: 'message_deliveries',
                             description: 'Trigger when a message is delivered',
                         },
+                        {
+                            name: 'Postback',
+                            value: 'messaging_postbacks',
+                            description: 'Trigger when a postback is received',
+                        },
                     ],
                     default: ['messages'],
                     required: true,
                 },
             ],
         };
+        this.methods = {
+            credentialTest: {
+                async facebookApiTest(credential) {
+                    const { accessToken } = credential.data;
+                    if (!accessToken) {
+                        return {
+                            status: 'Error',
+                            message: 'Access Token is required!',
+                        };
+                    }
+                    const options = {
+                        url: `https://graph.facebook.com/v13.0/me`,
+                        qs: {
+                            access_token: accessToken,
+                        },
+                        method: 'GET',
+                        json: true,
+                    };
+                    try {
+                        await this.helpers.request(options);
+                        return {
+                            status: 'OK',
+                            message: 'Authentication successful!',
+                        };
+                    }
+                    catch (error) {
+                        return {
+                            status: 'Error',
+                            message: error.message,
+                        };
+                    }
+                },
+            },
+        };
     }
     async webhook() {
         const req = this.getRequestObject();
-        const headerData = this.getHeaderData();
+        const credentials = await this.getCredentials('facebookApi');
         const events = this.getNodeParameter('events');
+        if (!(credentials === null || credentials === void 0 ? void 0 : credentials.verifyToken)) {
+            throw new Error('Verify Token is required!');
+        }
         if (req.method === 'GET') {
-            const mode = headerData['hub.mode'];
-            const token = headerData['hub.verify_token'];
-            const challenge = headerData['hub.challenge'];
-            if (mode === 'subscribe' && token === process.env.FACEBOOK_VERIFY_TOKEN) {
+            const query = this.getQueryData();
+            const mode = query['hub.mode'];
+            const token = query['hub.verify_token'];
+            const challenge = query['hub.challenge'];
+            if (mode === 'subscribe' && token === credentials.verifyToken) {
                 return {
                     webhookResponse: challenge,
                 };
             }
-            return {
-                webhookResponse: 'Forbidden',
-            };
-        }
-        const body = this.getBodyData();
-        if (body.object === 'page') {
-            const returnData = [];
-            const entries = body.entry;
-            for (const entry of entries) {
-                const messaging = entry.messaging[0];
-                if (messaging.message && events.includes('messages')) {
-                    returnData.push({
-                        json: {
-                            messageId: messaging.message.mid,
-                            messageText: messaging.message.text,
-                            senderId: messaging.sender.id,
-                            recipientId: messaging.recipient.id,
-                            timestamp: messaging.timestamp,
-                            eventType: 'message_received',
-                        },
-                    });
-                }
-            }
-            if (returnData.length) {
+            else {
                 return {
-                    webhookResponse: { success: true },
-                    workflowData: [returnData],
+                    webhookResponse: 'Forbidden',
                 };
+            }
+        }
+        if (req.method === 'POST') {
+            const body = this.getBodyData();
+            if (body.object === 'page') {
+                const returnData = [];
+                const entries = body.entry;
+                for (const entry of entries) {
+                    const messaging = entry.messaging[0];
+                    if (messaging.message && events.includes('messages')) {
+                        returnData.push({
+                            json: {
+                                messageId: messaging.message.mid,
+                                messageText: messaging.message.text,
+                                senderId: messaging.sender.id,
+                                recipientId: messaging.recipient.id,
+                                timestamp: messaging.timestamp,
+                                eventType: 'message_received',
+                                rawData: messaging,
+                            },
+                        });
+                    }
+                    if (messaging.read && events.includes('message_reads')) {
+                        returnData.push({
+                            json: {
+                                watermark: messaging.read.watermark,
+                                senderId: messaging.sender.id,
+                                recipientId: messaging.recipient.id,
+                                timestamp: messaging.timestamp,
+                                eventType: 'message_read',
+                                rawData: messaging,
+                            },
+                        });
+                    }
+                    if (messaging.delivery && events.includes('message_deliveries')) {
+                        returnData.push({
+                            json: {
+                                watermark: messaging.delivery.watermark,
+                                senderId: messaging.sender.id,
+                                recipientId: messaging.recipient.id,
+                                timestamp: messaging.timestamp,
+                                eventType: 'message_delivered',
+                                rawData: messaging,
+                            },
+                        });
+                    }
+                    if (messaging.postback && events.includes('messaging_postbacks')) {
+                        returnData.push({
+                            json: {
+                                payload: messaging.postback.payload,
+                                senderId: messaging.sender.id,
+                                recipientId: messaging.recipient.id,
+                                timestamp: messaging.timestamp,
+                                eventType: 'postback',
+                                rawData: messaging,
+                            },
+                        });
+                    }
+                }
+                if (returnData.length) {
+                    return {
+                        webhookResponse: { success: true },
+                        workflowData: [returnData],
+                    };
+                }
             }
         }
         return {

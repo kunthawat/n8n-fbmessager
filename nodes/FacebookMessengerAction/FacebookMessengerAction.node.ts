@@ -81,6 +81,7 @@ export class FacebookMessengerAction implements INodeType {
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
+		const credentials = await this.getCredentials('facebookApi');
 		const operation = this.getNodeParameter('operation', 0) as string;
 
 		try {
@@ -107,6 +108,9 @@ export class FacebookMessengerAction implements INodeType {
 					url: 'https://graph.facebook.com/v13.0/me/messages',
 					headers: {
 						'Content-Type': 'application/json',
+					},
+					qs: {
+						access_token: credentials.accessToken,
 					},
 					body: messageData,
 				});

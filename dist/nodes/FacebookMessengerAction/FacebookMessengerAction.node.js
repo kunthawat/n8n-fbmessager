@@ -76,6 +76,7 @@ class FacebookMessengerAction {
     async execute() {
         const items = this.getInputData();
         const returnData = [];
+        const credentials = await this.getCredentials('facebookApi');
         const operation = this.getNodeParameter('operation', 0);
         try {
             for (let i = 0; i < items.length; i++) {
@@ -98,6 +99,9 @@ class FacebookMessengerAction {
                     url: 'https://graph.facebook.com/v13.0/me/messages',
                     headers: {
                         'Content-Type': 'application/json',
+                    },
+                    qs: {
+                        access_token: credentials.accessToken,
                     },
                     body: messageData,
                 });
