@@ -20,16 +20,41 @@ class FacebookMessengerTrigger {
             webhooks: [
                 {
                     name: 'default',
-                    httpMethod: 'POST',
+                    httpMethod: '={{$parameter["httpMethod"]}}',
                     responseMode: 'onReceived',
                     path: 'webhook',
                 },
             ],
             properties: [
                 {
+                    displayName: 'HTTP Method',
+                    name: 'httpMethod',
+                    type: 'options',
+                    options: [
+                        {
+                            name: 'GET',
+                            value: 'GET',
+                            description: 'Use GET for webhook verification',
+                        },
+                        {
+                            name: 'POST',
+                            value: 'POST',
+                            description: 'Use POST for receiving messages',
+                        },
+                    ],
+                    default: 'POST',
+                    description: 'The HTTP method to listen to',
+                    required: true,
+                },
+                {
                     displayName: 'Events',
                     name: 'events',
                     type: 'multiOptions',
+                    displayOptions: {
+                        show: {
+                            httpMethod: ['POST'],
+                        },
+                    },
                     options: [
                         {
                             name: 'Message Received',
@@ -59,21 +84,23 @@ class FacebookMessengerTrigger {
         };
     }
     async webhookVerify() {
-        const query = this.getQueryData();
-        if (query['hub.mode'] === 'subscribe') {
-            const credentials = await this.getCredentials('facebookMessengerApi');
-            if (query['hub.verify_token'] === credentials.verifyToken) {
-                return {
-                    webhookResponse: query['hub.challenge'],
-                };
-            }
-        }
-        return {
-            webhookResponse: 'Verification failed',
-        };
-    }
-    async webhook() {
         var _a, _b;
+        const httpMethod = this.getNodeParameter('httpMethod');
+        if (httpMethod === 'GET') {
+            const query = this.getQueryData();
+            if (query['hub.mode'] === 'subscribe') {
+                const credentials = await this.getCredentials('facebookMessengerApi');
+                if (query['hub.verify_token'] === credentials.verifyToken) {
+                    return {
+                        webhookResponse: query['hub.challenge'],
+                    };
+                }
+            }
+            return {
+                webhookResponse: 'Verification failed',
+            };
+        }
+        // For POST requests
         const bodyData = this.getBodyData();
         const events = this.getNodeParameter('events');
         const returnData = [];

@@ -41,16 +41,41 @@ export class FacebookMessengerTrigger implements INodeType {
         webhooks: [
             {
                 name: 'default',
-                httpMethod: 'POST',
+                httpMethod: '={{$parameter["httpMethod"]}}',
                 responseMode: 'onReceived',
                 path: 'webhook',
             },
         ],
         properties: [
             {
+                displayName: 'HTTP Method',
+                name: 'httpMethod',
+                type: 'options',
+                options: [
+                    {
+                        name: 'GET',
+                        value: 'GET',
+                        description: 'Use GET for webhook verification',
+                    },
+                    {
+                        name: 'POST',
+                        value: 'POST',
+                        description: 'Use POST for receiving messages',
+                    },
+                ],
+                default: 'POST',
+                description: 'The HTTP method to listen to',
+                required: true,
+            },
+            {
                 displayName: 'Events',
                 name: 'events',
                 type: 'multiOptions',
+                displayOptions: {
+                    show: {
+                        httpMethod: ['POST'],
+                    },
+                },
                 options: [
                     {
                         name: 'Message Received',
@@ -80,26 +105,29 @@ export class FacebookMessengerTrigger implements INodeType {
     };
 
     async webhookVerify(this: IWebhookFunctions): Promise<IWebhookResponseData> {
-        const query = this.getQueryData() as IDataObject;
+        const httpMethod = this.getNodeParameter('httpMethod') as string;
+        
+        if (httpMethod === 'GET') {
+            const query = this.getQueryData() as IDataObject;
 
-        if (query['hub.mode'] === 'subscribe') {
-            const credentials = await this.getCredentials('facebookMessengerApi') as {
-                verifyToken: string;
-            };
-
-            if (query['hub.verify_token'] === credentials.verifyToken) {
-                return {
-                    webhookResponse: query['hub.challenge'] as string,
+            if (query['hub.mode'] === 'subscribe') {
+                const credentials = await this.getCredentials('facebookMessengerApi') as {
+                    verifyToken: string;
                 };
+
+                if (query['hub.verify_token'] === credentials.verifyToken) {
+                    return {
+                        webhookResponse: query['hub.challenge'] as string,
+                    };
+                }
             }
+
+            return {
+                webhookResponse: 'Verification failed',
+            };
         }
 
-        return {
-            webhookResponse: 'Verification failed',
-        };
-    }
-
-    async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
+        // For POST requests
         const bodyData = this.getBodyData() as IDataObject;
         const events = this.getNodeParameter('events') as string[];
         const returnData: IDataObject[] = [];
