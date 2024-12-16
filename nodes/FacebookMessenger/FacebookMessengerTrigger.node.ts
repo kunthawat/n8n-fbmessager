@@ -9,10 +9,12 @@ import {
     LoggerProxy,
 } from 'n8n-workflow';
 
+// Interfaces for specific message format
 interface IFacebookMessage {
     mid: string;
     text: string;
     commands?: Array<{ name: string }>;
+    is_echo?: boolean;
 }
 
 interface IFacebookSender {
@@ -82,6 +84,40 @@ export class FacebookMessengerTrigger implements INodeType {
                 default: 'POST',
                 description: 'The HTTP method to listen to',
             },
+            {
+                displayName: 'Events',
+                name: 'events',
+                type: 'multiOptions',
+                displayOptions: {
+                    show: {
+                        httpMethod: ['POST'],
+                    },
+                },
+                options: [
+                    {
+                        name: 'Message Received',
+                        value: 'messages',
+                        description: 'Triggered when a message is received',
+                    },
+                    {
+                        name: 'Message Echo',
+                        value: 'message_echoes',
+                        description: 'Triggered when a message is sent by your page',
+                    },
+                    {
+                        name: 'Message Delivered',
+                        value: 'message_deliveries',
+                        description: 'Triggered when a message is delivered',
+                    },
+                    {
+                        name: 'Message Read',
+                        value: 'message_reads',
+                        description: 'Triggered when a message is read by the recipient',
+                    },
+                ],
+                default: ['messages'],
+                required: true,
+            },
         ],
     };
 
@@ -104,39 +140,99 @@ export class FacebookMessengerTrigger implements INodeType {
                 };
             }
 
-            // Handle POST requests (incoming messages)
+            // Handle POST requests
             const bodyData = this.getBodyData();
-            LoggerProxy.debug('Received webhook data:', { bodyData });
+            const selectedEvents = this.getNodeParameter('events', ['messages']) as string[];
+            LoggerProxy.debug('Received webhook data:', { bodyData, selectedEvents });
 
-            // Validate and transform the data
-            const webhookData = bodyData as IFacebookWebhookData;
-            
-            if (!webhookData.field || webhookData.field !== 'messages' || !webhookData.value) {
-                LoggerProxy.debug('Invalid webhook data format or not a message', { webhookData });
+            // Handle the specific message format
+            if (bodyData.field === 'messages' && bodyData.value) {
+                const webhookData = bodyData as IFacebookWebhookData;
+                const value = webhookData.value;
+
+                const output: IDataObject = {
+                    senderId: value.sender.id,
+                    recipientId: value.recipient.id,
+                    timestamp: value.timestamp,
+                    messageId: value.message.mid,
+                    text: value.message.text,
+                    commands: value.message.commands || [],
+                    eventType: 'messages',
+                    rawData: webhookData,
+                };
+
                 return {
                     webhookResponse: 'OK',
+                    workflowData: [this.helpers.returnJsonArray([output])],
                 };
             }
 
-            const value = webhookData.value;
+            // Handle standard Facebook webhook format
+            const body = bodyData as IDataObject;
+            
+            if (body.object === 'page') {
+                const entries = body.entry as IDataObject[];
+                if (!entries?.length) {
+                    return { webhookResponse: 'OK' };
+                }
 
-            // Process the message
-            const output: IDataObject = {
-                senderId: value.sender.id,
-                recipientId: value.recipient.id,
-                timestamp: value.timestamp,
-                messageId: value.message.mid,
-                text: value.message.text,
-                commands: value.message.commands || [],
-                rawData: webhookData,
-            };
+                const outputs: IDataObject[] = [];
 
-            LoggerProxy.debug('Processed message:', { output });
+                for (const entry of entries) {
+                    const messaging = entry.messaging as IDataObject[];
+                    if (!messaging?.length) continue;
 
-            // Return both webhook response and data for the next node
+                    for (const message of messaging) {
+                        let eventType = '';
+                        let messageData: IDataObject = {};
+
+                        if (message.message) {
+                            const msg = message.message as IDataObject;
+                            eventType = msg.is_echo ? 'message_echoes' : 'messages';
+                            messageData = {
+                                type: eventType,
+                                text: msg.text || '',
+                                ...msg,
+                            };
+                        } else if (message.delivery) {
+                            eventType = 'message_deliveries';
+                            messageData = {
+                                type: eventType,
+                                delivery: message.delivery,
+                            };
+                        } else if (message.read) {
+                            eventType = 'message_reads';
+                            messageData = {
+                                type: eventType,
+                                read: message.read,
+                            };
+                        }
+
+                        if (selectedEvents.includes(eventType)) {
+                            outputs.push({
+                                messageId: (message.message as IDataObject)?.mid,
+                                timestamp: entry.time || Date.now(),
+                                pageId: entry.id,
+                                senderId: (message.sender as IDataObject)?.id,
+                                recipientId: (message.recipient as IDataObject)?.id,
+                                eventType,
+                                messageData,
+                                rawData: message,
+                            });
+                        }
+                    }
+                }
+
+                if (outputs.length > 0) {
+                    return {
+                        webhookResponse: 'OK',
+                        workflowData: [this.helpers.returnJsonArray(outputs)],
+                    };
+                }
+            }
+
             return {
                 webhookResponse: 'OK',
-                workflowData: [this.helpers.returnJsonArray([output])],
             };
 
         } catch (error) {
