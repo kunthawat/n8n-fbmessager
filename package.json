@@ -3,56 +3,46 @@
     "version": "1.0.0",
     "description": "n8n nodes for Facebook Messenger",
     "keywords": [
-        "n8n-community-node-package"
+      "n8n-community-node-package"
     ],
     "license": "MIT",
     "homepage": "",
     "author": {
-        "name": "Your Name",
-        "email": "your@email.com"
+      "name": "Your Name",
+      "email": "your@email.com"
     },
     "repository": {
-        "type": "git",
-        "url": "git+https://github.com/yourusername/n8n-nodes-facebook-messenger.git"
+      "type": "git",
+      "url": "git+https://github.com/yourusername/n8n-nodes-facebook-messenger.git"
     },
     "main": "index.js",
     "scripts": {
-        "build": "tsc && gulp build:icons",
-        "dev": "tsc --watch",
-        "format": "prettier nodes --write",
-        "lint": "eslint nodes package.json",
-        "lintfix": "eslint nodes package.json --fix",
-        "prepublishOnly": "npm run build && npm run lint -c .eslintrc.js"
+      "build": "tsc && cp -r nodes/*/facebook.svg dist/nodes/*/",
+      "dev": "tsc --watch",
+      "format": "prettier nodes --write",
+      "lint": "eslint nodes package.json",
+      "lintfix": "eslint nodes package.json --fix",
+      "prepublishOnly": "npm run build && npm run lint -c .eslintrc.js"
     },
     "files": [
-        "dist"
+      "dist"
     ],
     "n8n": {
-        "n8nNodesApiVersion": 1,
-        "credentials": [
-            "dist/credentials/FacebookApi.credentials.js"
-        ],
-        "nodes": [
-            "dist/nodes/FacebookMessengerTrigger/FacebookMessengerTrigger.node.js",
-            "dist/nodes/FacebookMessengerAction/FacebookMessengerAction.node.js"
-        ]
+      "n8nNodesApiVersion": 1,
+      "nodes": [
+        "dist/nodes/FacebookMessengerTrigger/FacebookMessengerTrigger.node.js",
+        "dist/nodes/FacebookMessengerAction/FacebookMessengerAction.node.js"
+      ]
     },
     "devDependencies": {
-        "@sentry/node": "^7.0.0",
-        "@types/express": "^4.17.6",
-        "@types/node": "^16.11.10",
-        "@types/request-promise-native": "~1.0.15",
-        "@typescript-eslint/parser": "~5.45",
-        "eslint-plugin-n8n-nodes-base": "^1.0.0",
-        "form-data": "^4.0.0",
-        "gulp": "^5.0.0",
-        "n8n-core": "^1.0.0",
-        "n8n-workflow": "^1.0.0",
-        "prettier": "^2.7.1",
-        "typescript": "~4.8.4"
-    },
-    "dependencies": {
-        "@sentry/node": "^7.0.0",
-        "form-data": "^4.0.0"
+      "@types/express": "^4.17.6",
+      "@types/request-promise-native": "~1.0.15",
+      "@typescript-eslint/parser": "~5.45",
+      "eslint-plugin-n8n-nodes-base": "^1.0.0",
+      "n8n-core": "^1.0.0",
+      "n8n-workflow": "^1.0.0",
+      "prettier": "^2.7.1",
+      "typescript": "~4.8.4"
     }
-}
+  }
+  

@@ -1,28 +1,25 @@
 {
-    "compilerOptions": {
-      "lib": ["ES2021"],
-      "module": "commonjs",
-      "target": "es2019",
-      "moduleResolution": "node",
-      "removeComments": true,
-      "useUnknownInCatchVariables": false,
-      "forceConsistentCasingInFileNames": true,
-      "noImplicitAny": true,
-      "noImplicitReturns": true,
-      "strict": true,
-      "noUnusedLocals": true,
-      "preserveConstEnums": true,
-      "esModuleInterop": true,
-      "resolveJsonModule": true,
-      "incremental": true,
-      "skipLibCheck": true,
-      "outDir": "./dist",
-      "rootDir": "./nodes",
-      "paths": {
-        "@/*": ["./nodes/*"]
-      }
-    },
-    "include": ["nodes/**/*"],
-    "exclude": ["node_modules/**/*", "dist/**/*"]
-  }
-  
+  "compilerOptions": {
+    "strict": true,
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2019",
+    "outDir": "./dist",
+    "rootDir": "./",
+    "removeComments": true,
+    "useUnknownInCatchVariables": false,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "preserveConstEnums": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "incremental": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "lib": ["es2019", "es2020", "es2021"]
+  },
+  "include": ["nodes/**/*", "credentials/**/*"],
+  "exclude": ["node_modules/**/*", "dist/**/*"]
+}
