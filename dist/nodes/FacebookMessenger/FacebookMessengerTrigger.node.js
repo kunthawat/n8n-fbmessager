@@ -50,52 +50,18 @@ class FacebookMessengerTrigger {
                     default: 'POST',
                     description: 'The HTTP method to listen to',
                 },
-                {
-                    displayName: 'Events',
-                    name: 'events',
-                    type: 'multiOptions',
-                    displayOptions: {
-                        show: {
-                            httpMethod: ['POST'],
-                        },
-                    },
-                    options: [
-                        {
-                            name: 'Message Received',
-                            value: 'messages',
-                            description: 'Triggered when a message is received',
-                        },
-                        {
-                            name: 'Message Echo',
-                            value: 'message_echoes',
-                            description: 'Triggered when a message is sent by your page',
-                        },
-                        {
-                            name: 'Message Delivered',
-                            value: 'message_deliveries',
-                            description: 'Triggered when a message is delivered',
-                        },
-                        {
-                            name: 'Message Read',
-                            value: 'message_reads',
-                            description: 'Triggered when a message is read by the recipient',
-                        },
-                    ],
-                    default: ['messages'],
-                    required: true,
-                },
             ],
         };
     }
     async webhook() {
-        var _a, _b, _c;
         try {
             const credentials = await this.getCredentials('facebookMessengerApi');
             const httpMethod = this.getNodeParameter('httpMethod');
             // Handle GET requests (webhook verification)
             if (httpMethod === 'GET') {
                 const query = this.getQueryData();
-                if (query['hub.mode'] === 'subscribe' && query['hub.verify_token'] === credentials.verifyToken) {
+                if (query['hub.mode'] === 'subscribe' &&
+                    query['hub.verify_token'] === credentials.verifyToken) {
                     return {
                         webhookResponse: query['hub.challenge'],
                     };
@@ -105,75 +71,32 @@ class FacebookMessengerTrigger {
                 };
             }
             // Handle POST requests (incoming messages)
-            const body = this.getBodyData();
-            // Ensure it's a page webhook event
-            if (body.object !== 'page') {
+            const bodyData = this.getBodyData();
+            n8n_workflow_1.LoggerProxy.debug('Received webhook data:', { bodyData });
+            // Validate and transform the data
+            const webhookData = bodyData;
+            if (!webhookData.field || webhookData.field !== 'messages' || !webhookData.value) {
+                n8n_workflow_1.LoggerProxy.debug('Invalid webhook data format or not a message', { webhookData });
                 return {
                     webhookResponse: 'OK',
                 };
             }
-            const entries = body.entry;
-            if (!(entries === null || entries === void 0 ? void 0 : entries.length)) {
-                return {
-                    webhookResponse: 'OK',
-                };
-            }
-            const selectedEvents = this.getNodeParameter('events', ['messages']);
-            const output = [];
-            // Process each entry
-            for (const entry of entries) {
-                const messaging = entry.messaging;
-                if (!(messaging === null || messaging === void 0 ? void 0 : messaging.length))
-                    continue;
-                for (const message of messaging) {
-                    let eventType = '';
-                    let messageData = {};
-                    if (message.message) {
-                        const msg = message.message;
-                        eventType = msg.is_echo ? 'message_echoes' : 'messages';
-                        messageData = {
-                            type: eventType,
-                            text: msg.text || '',
-                            ...msg,
-                        };
-                    }
-                    else if (message.delivery) {
-                        eventType = 'message_deliveries';
-                        messageData = {
-                            type: eventType,
-                            delivery: message.delivery,
-                        };
-                    }
-                    else if (message.read) {
-                        eventType = 'message_reads';
-                        messageData = {
-                            type: eventType,
-                            read: message.read,
-                        };
-                    }
-                    if (selectedEvents.includes(eventType)) {
-                        output.push({
-                            messageId: ((_a = message.message) === null || _a === void 0 ? void 0 : _a.mid) || undefined,
-                            timestamp: entry.time || Date.now(),
-                            pageId: entry.id,
-                            senderId: (_b = message.sender) === null || _b === void 0 ? void 0 : _b.id,
-                            recipientId: (_c = message.recipient) === null || _c === void 0 ? void 0 : _c.id,
-                            eventType,
-                            messageData,
-                            rawData: message, // Include raw data for complete access
-                        });
-                    }
-                }
-            }
-            if (output.length === 0) {
-                return {
-                    webhookResponse: 'OK',
-                };
-            }
+            const value = webhookData.value;
+            // Process the message
+            const output = {
+                senderId: value.sender.id,
+                recipientId: value.recipient.id,
+                timestamp: value.timestamp,
+                messageId: value.message.mid,
+                text: value.message.text,
+                commands: value.message.commands || [],
+                rawData: webhookData,
+            };
+            n8n_workflow_1.LoggerProxy.debug('Processed message:', { output });
             // Return both webhook response and data for the next node
             return {
                 webhookResponse: 'OK',
-                workflowData: [this.helpers.returnJsonArray(output)],
+                workflowData: [this.helpers.returnJsonArray([output])],
             };
         }
         catch (error) {
