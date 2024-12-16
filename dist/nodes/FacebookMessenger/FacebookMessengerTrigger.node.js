@@ -108,7 +108,10 @@ class FacebookMessengerTrigger {
             // Handle POST requests
             const bodyData = this.getBodyData();
             const selectedEvents = this.getNodeParameter('events', ['messages']);
-            n8n_workflow_1.LoggerProxy.debug('Received webhook data:', { bodyData, selectedEvents });
+            n8n_workflow_1.LoggerProxy.debug('Webhook received data:', {
+                bodyData,
+                selectedEvents,
+            });
             // Process incoming data
             if (bodyData.object === 'page') {
                 const entries = bodyData.entry;
@@ -121,60 +124,68 @@ class FacebookMessengerTrigger {
                     if (!(messaging === null || messaging === void 0 ? void 0 : messaging.length))
                         continue;
                     for (const message of messaging) {
-                        let eventType = '';
-                        let outputData = {
+                        n8n_workflow_1.LoggerProxy.debug('Processing message:', { message });
+                        // Base output data
+                        const baseOutput = {
                             timestamp: entry.time || Date.now(),
                             pageId: entry.id,
                             senderId: (_a = message.sender) === null || _a === void 0 ? void 0 : _a.id,
                             recipientId: (_b = message.recipient) === null || _b === void 0 ? void 0 : _b.id,
                         };
-                        // Handle different event types
-                        if (message.message) {
+                        // Handle standard message
+                        if (message.message && !message.message.is_echo) {
                             const msgData = message.message;
-                            if (msgData.is_echo) {
-                                eventType = 'message_echoes';
-                                outputData = {
-                                    ...outputData,
-                                    messageId: msgData.mid,
-                                    text: msgData.text,
-                                    isEcho: true,
-                                };
-                            }
-                            else {
-                                eventType = 'messages';
-                                outputData = {
-                                    ...outputData,
+                            if (selectedEvents.includes('messages')) {
+                                outputs.push({
+                                    ...baseOutput,
+                                    eventType: 'messages',
                                     messageId: msgData.mid,
                                     text: msgData.text,
                                     messageData: msgData,
-                                };
+                                    rawData: message,
+                                });
                             }
+                            continue;
                         }
-                        else if (message.delivery) {
-                            eventType = 'message_deliveries';
-                            outputData = {
-                                ...outputData,
-                                delivery: message.delivery,
-                            };
+                        // Handle echo
+                        if (message.message && message.message.is_echo) {
+                            const msgData = message.message;
+                            if (selectedEvents.includes('message_echoes')) {
+                                outputs.push({
+                                    ...baseOutput,
+                                    eventType: 'message_echoes',
+                                    messageId: msgData.mid,
+                                    text: msgData.text,
+                                    isEcho: true,
+                                    rawData: message,
+                                });
+                            }
+                            continue;
                         }
-                        else if (message.read) {
-                            eventType = 'message_reads';
-                            outputData = {
-                                ...outputData,
-                                read: message.read,
-                            };
-                        }
-                        if (selectedEvents.includes(eventType)) {
+                        // Handle delivery
+                        if (message.delivery && selectedEvents.includes('message_deliveries')) {
                             outputs.push({
-                                ...outputData,
-                                eventType,
+                                ...baseOutput,
+                                eventType: 'message_deliveries',
+                                delivery: message.delivery,
                                 rawData: message,
                             });
+                            continue;
+                        }
+                        // Handle read
+                        if (message.read && selectedEvents.includes('message_reads')) {
+                            outputs.push({
+                                ...baseOutput,
+                                eventType: 'message_reads',
+                                read: message.read,
+                                rawData: message,
+                            });
+                            continue;
                         }
                     }
                 }
                 if (outputs.length > 0) {
-                    n8n_workflow_1.LoggerProxy.debug('Processing outputs:', { outputs });
+                    n8n_workflow_1.LoggerProxy.debug('Processed outputs:', { outputs });
                     return {
                         webhookResponse: 'OK',
                         workflowData: [this.helpers.returnJsonArray(outputs)],

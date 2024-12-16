@@ -142,7 +142,11 @@ export class FacebookMessengerTrigger implements INodeType {
             // Handle POST requests
             const bodyData = this.getBodyData() as IDataObject;
             const selectedEvents = this.getNodeParameter('events', ['messages']) as string[];
-            LoggerProxy.debug('Received webhook data:', { bodyData, selectedEvents });
+            
+            LoggerProxy.debug('Webhook received data:', { 
+                bodyData,
+                selectedEvents,
+            });
 
             // Process incoming data
             if (bodyData.object === 'page') {
@@ -158,61 +162,74 @@ export class FacebookMessengerTrigger implements INodeType {
                     if (!messaging?.length) continue;
 
                     for (const message of messaging) {
-                        let eventType = '';
-                        let outputData: IDataObject = {
+                        LoggerProxy.debug('Processing message:', { message });
+
+                        // Base output data
+                        const baseOutput = {
                             timestamp: entry.time || Date.now(),
                             pageId: entry.id,
                             senderId: (message.sender as IDataObject)?.id,
                             recipientId: (message.recipient as IDataObject)?.id,
                         };
 
-                        // Handle different event types
-                        if (message.message) {
+                        // Handle standard message
+                        if (message.message && !(message.message as IDataObject).is_echo) {
                             const msgData = message.message as IDataObject;
-                            
-                            if (msgData.is_echo) {
-                                eventType = 'message_echoes';
-                                outputData = {
-                                    ...outputData,
-                                    messageId: msgData.mid,
-                                    text: msgData.text,
-                                    isEcho: true,
-                                };
-                            } else {
-                                eventType = 'messages';
-                                outputData = {
-                                    ...outputData,
+                            if (selectedEvents.includes('messages')) {
+                                outputs.push({
+                                    ...baseOutput,
+                                    eventType: 'messages',
                                     messageId: msgData.mid,
                                     text: msgData.text,
                                     messageData: msgData,
-                                };
+                                    rawData: message,
+                                });
                             }
-                        } else if (message.delivery) {
-                            eventType = 'message_deliveries';
-                            outputData = {
-                                ...outputData,
-                                delivery: message.delivery,
-                            };
-                        } else if (message.read) {
-                            eventType = 'message_reads';
-                            outputData = {
-                                ...outputData,
-                                read: message.read,
-                            };
+                            continue;
                         }
 
-                        if (selectedEvents.includes(eventType)) {
+                        // Handle echo
+                        if (message.message && (message.message as IDataObject).is_echo) {
+                            const msgData = message.message as IDataObject;
+                            if (selectedEvents.includes('message_echoes')) {
+                                outputs.push({
+                                    ...baseOutput,
+                                    eventType: 'message_echoes',
+                                    messageId: msgData.mid,
+                                    text: msgData.text,
+                                    isEcho: true,
+                                    rawData: message,
+                                });
+                            }
+                            continue;
+                        }
+
+                        // Handle delivery
+                        if (message.delivery && selectedEvents.includes('message_deliveries')) {
                             outputs.push({
-                                ...outputData,
-                                eventType,
+                                ...baseOutput,
+                                eventType: 'message_deliveries',
+                                delivery: message.delivery,
                                 rawData: message,
                             });
+                            continue;
+                        }
+
+                        // Handle read
+                        if (message.read && selectedEvents.includes('message_reads')) {
+                            outputs.push({
+                                ...baseOutput,
+                                eventType: 'message_reads',
+                                read: message.read,
+                                rawData: message,
+                            });
+                            continue;
                         }
                     }
                 }
 
                 if (outputs.length > 0) {
-                    LoggerProxy.debug('Processing outputs:', { outputs });
+                    LoggerProxy.debug('Processed outputs:', { outputs });
                     return {
                         webhookResponse: 'OK',
                         workflowData: [this.helpers.returnJsonArray(outputs)],
