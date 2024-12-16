@@ -8,21 +8,6 @@ import {
     NodeConnectionType,
 } from 'n8n-workflow';
 
-interface IFacebookMessage extends IDataObject {
-    message?: {
-        is_echo?: boolean;
-        text?: string;
-    };
-    sender?: {
-        id: string;
-    };
-    recipient?: {
-        id: string;
-    };
-    delivery?: IDataObject;
-    read?: IDataObject;
-}
-
 export class FacebookMessengerTrigger implements INodeType {
     description: INodeTypeDescription = {
         displayName: 'Facebook Messenger Trigger',
@@ -38,14 +23,13 @@ export class FacebookMessengerTrigger implements INodeType {
         outputs: [{
             type: NodeConnectionType.Main,
         }],
-        webhooks: [
-            {
-                name: 'default',
-                httpMethod: '={{$parameter["httpMethod"]}}',
-                responseMode: 'onReceived',
-                path: 'webhook',
-            },
-        ],
+        // Changed webhook to webhooks
+        webhooks: [{
+            name: 'default',
+            httpMethod: '={{$parameter["httpMethod"]}}',
+            responseMode: 'onReceived',
+            path: 'webhook',
+        }],
         properties: [
             {
                 displayName: 'HTTP Method',
@@ -55,17 +39,14 @@ export class FacebookMessengerTrigger implements INodeType {
                     {
                         name: 'GET',
                         value: 'GET',
-                        description: 'Use GET for webhook verification',
                     },
                     {
                         name: 'POST',
                         value: 'POST',
-                        description: 'Use POST for receiving messages',
                     },
                 ],
                 default: 'POST',
                 description: 'The HTTP method to listen to',
-                required: true,
             },
             {
                 displayName: 'Events',
@@ -104,9 +85,11 @@ export class FacebookMessengerTrigger implements INodeType {
         ],
     };
 
-    async webhookVerify(this: IWebhookFunctions): Promise<IWebhookResponseData> {
+    // Method to execute when webhook is called
+    async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
         const httpMethod = this.getNodeParameter('httpMethod') as string;
-        
+
+        // Handle GET requests (webhook verification)
         if (httpMethod === 'GET') {
             const query = this.getQueryData() as IDataObject;
 
@@ -127,7 +110,7 @@ export class FacebookMessengerTrigger implements INodeType {
             };
         }
 
-        // For POST requests
+        // Handle POST requests (incoming messages)
         const bodyData = this.getBodyData() as IDataObject;
         const events = this.getNodeParameter('events') as string[];
         const returnData: IDataObject[] = [];
@@ -137,13 +120,13 @@ export class FacebookMessengerTrigger implements INodeType {
             
             if (entries) {
                 for (const entry of entries) {
-                    const messaging = entry.messaging as IFacebookMessage[];
+                    const messaging = entry.messaging as IDataObject[];
                     if (messaging) {
                         for (const message of messaging) {
                             let eventType = '';
-                            if (message.message && !message.message.is_echo) {
+                            if (message.message && !(message.message as IDataObject).is_echo) {
                                 eventType = 'messages';
-                            } else if (message.message && message.message.is_echo) {
+                            } else if (message.message && (message.message as IDataObject).is_echo) {
                                 eventType = 'message_echoes';
                             } else if (message.delivery) {
                                 eventType = 'message_deliveries';
@@ -155,8 +138,8 @@ export class FacebookMessengerTrigger implements INodeType {
                                 returnData.push({
                                     timestamp: entry.time || Date.now(),
                                     pageId: entry.id,
-                                    senderId: message.sender?.id,
-                                    recipientId: message.recipient?.id,
+                                    senderId: (message.sender as IDataObject)?.id,
+                                    recipientId: (message.recipient as IDataObject)?.id,
                                     eventType,
                                     messageData: message,
                                 });

@@ -17,14 +17,13 @@ class FacebookMessengerTrigger {
             outputs: [{
                     type: "main" /* NodeConnectionType.Main */,
                 }],
-            webhooks: [
-                {
+            // Changed webhook to webhooks
+            webhooks: [{
                     name: 'default',
                     httpMethod: '={{$parameter["httpMethod"]}}',
                     responseMode: 'onReceived',
                     path: 'webhook',
-                },
-            ],
+                }],
             properties: [
                 {
                     displayName: 'HTTP Method',
@@ -34,17 +33,14 @@ class FacebookMessengerTrigger {
                         {
                             name: 'GET',
                             value: 'GET',
-                            description: 'Use GET for webhook verification',
                         },
                         {
                             name: 'POST',
                             value: 'POST',
-                            description: 'Use POST for receiving messages',
                         },
                     ],
                     default: 'POST',
                     description: 'The HTTP method to listen to',
-                    required: true,
                 },
                 {
                     displayName: 'Events',
@@ -83,9 +79,11 @@ class FacebookMessengerTrigger {
             ],
         };
     }
-    async webhookVerify() {
+    // Method to execute when webhook is called
+    async webhook() {
         var _a, _b;
         const httpMethod = this.getNodeParameter('httpMethod');
+        // Handle GET requests (webhook verification)
         if (httpMethod === 'GET') {
             const query = this.getQueryData();
             if (query['hub.mode'] === 'subscribe') {
@@ -100,7 +98,7 @@ class FacebookMessengerTrigger {
                 webhookResponse: 'Verification failed',
             };
         }
-        // For POST requests
+        // Handle POST requests (incoming messages)
         const bodyData = this.getBodyData();
         const events = this.getNodeParameter('events');
         const returnData = [];
