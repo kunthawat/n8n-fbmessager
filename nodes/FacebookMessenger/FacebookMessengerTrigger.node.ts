@@ -9,7 +9,6 @@ import {
     LoggerProxy,
 } from 'n8n-workflow';
 
-// Interfaces for specific message format
 interface IFacebookMessage {
     mid: string;
     text: string;
@@ -141,37 +140,13 @@ export class FacebookMessengerTrigger implements INodeType {
             }
 
             // Handle POST requests
-            const bodyData = this.getBodyData();
+            const bodyData = this.getBodyData() as IDataObject;
             const selectedEvents = this.getNodeParameter('events', ['messages']) as string[];
             LoggerProxy.debug('Received webhook data:', { bodyData, selectedEvents });
 
-            // Handle the specific message format
-            if (bodyData.field === 'messages' && bodyData.value) {
-                const webhookData = bodyData as IFacebookWebhookData;
-                const value = webhookData.value;
-
-                const output: IDataObject = {
-                    senderId: value.sender.id,
-                    recipientId: value.recipient.id,
-                    timestamp: value.timestamp,
-                    messageId: value.message.mid,
-                    text: value.message.text,
-                    commands: value.message.commands || [],
-                    eventType: 'messages',
-                    rawData: webhookData,
-                };
-
-                return {
-                    webhookResponse: 'OK',
-                    workflowData: [this.helpers.returnJsonArray([output])],
-                };
-            }
-
-            // Handle standard Facebook webhook format
-            const body = bodyData as IDataObject;
-            
-            if (body.object === 'page') {
-                const entries = body.entry as IDataObject[];
+            // Process incoming data
+            if (bodyData.object === 'page') {
+                const entries = bodyData.entry as IDataObject[];
                 if (!entries?.length) {
                     return { webhookResponse: 'OK' };
                 }
@@ -184,39 +159,52 @@ export class FacebookMessengerTrigger implements INodeType {
 
                     for (const message of messaging) {
                         let eventType = '';
-                        let messageData: IDataObject = {};
+                        let outputData: IDataObject = {
+                            timestamp: entry.time || Date.now(),
+                            pageId: entry.id,
+                            senderId: (message.sender as IDataObject)?.id,
+                            recipientId: (message.recipient as IDataObject)?.id,
+                        };
 
+                        // Handle different event types
                         if (message.message) {
-                            const msg = message.message as IDataObject;
-                            eventType = msg.is_echo ? 'message_echoes' : 'messages';
-                            messageData = {
-                                type: eventType,
-                                text: msg.text || '',
-                                ...msg,
-                            };
+                            const msgData = message.message as IDataObject;
+                            
+                            if (msgData.is_echo) {
+                                eventType = 'message_echoes';
+                                outputData = {
+                                    ...outputData,
+                                    messageId: msgData.mid,
+                                    text: msgData.text,
+                                    isEcho: true,
+                                };
+                            } else {
+                                eventType = 'messages';
+                                outputData = {
+                                    ...outputData,
+                                    messageId: msgData.mid,
+                                    text: msgData.text,
+                                    messageData: msgData,
+                                };
+                            }
                         } else if (message.delivery) {
                             eventType = 'message_deliveries';
-                            messageData = {
-                                type: eventType,
+                            outputData = {
+                                ...outputData,
                                 delivery: message.delivery,
                             };
                         } else if (message.read) {
                             eventType = 'message_reads';
-                            messageData = {
-                                type: eventType,
+                            outputData = {
+                                ...outputData,
                                 read: message.read,
                             };
                         }
 
                         if (selectedEvents.includes(eventType)) {
                             outputs.push({
-                                messageId: (message.message as IDataObject)?.mid,
-                                timestamp: entry.time || Date.now(),
-                                pageId: entry.id,
-                                senderId: (message.sender as IDataObject)?.id,
-                                recipientId: (message.recipient as IDataObject)?.id,
+                                ...outputData,
                                 eventType,
-                                messageData,
                                 rawData: message,
                             });
                         }
@@ -224,6 +212,7 @@ export class FacebookMessengerTrigger implements INodeType {
                 }
 
                 if (outputs.length > 0) {
+                    LoggerProxy.debug('Processing outputs:', { outputs });
                     return {
                         webhookResponse: 'OK',
                         workflowData: [this.helpers.returnJsonArray(outputs)],

@@ -88,7 +88,7 @@ class FacebookMessengerTrigger {
         };
     }
     async webhook() {
-        var _a, _b, _c;
+        var _a, _b;
         try {
             const credentials = await this.getCredentials('facebookMessengerApi');
             const httpMethod = this.getNodeParameter('httpMethod');
@@ -109,29 +109,9 @@ class FacebookMessengerTrigger {
             const bodyData = this.getBodyData();
             const selectedEvents = this.getNodeParameter('events', ['messages']);
             n8n_workflow_1.LoggerProxy.debug('Received webhook data:', { bodyData, selectedEvents });
-            // Handle the specific message format
-            if (bodyData.field === 'messages' && bodyData.value) {
-                const webhookData = bodyData;
-                const value = webhookData.value;
-                const output = {
-                    senderId: value.sender.id,
-                    recipientId: value.recipient.id,
-                    timestamp: value.timestamp,
-                    messageId: value.message.mid,
-                    text: value.message.text,
-                    commands: value.message.commands || [],
-                    eventType: 'messages',
-                    rawData: webhookData,
-                };
-                return {
-                    webhookResponse: 'OK',
-                    workflowData: [this.helpers.returnJsonArray([output])],
-                };
-            }
-            // Handle standard Facebook webhook format
-            const body = bodyData;
-            if (body.object === 'page') {
-                const entries = body.entry;
+            // Process incoming data
+            if (bodyData.object === 'page') {
+                const entries = bodyData.entry;
                 if (!(entries === null || entries === void 0 ? void 0 : entries.length)) {
                     return { webhookResponse: 'OK' };
                 }
@@ -142,45 +122,59 @@ class FacebookMessengerTrigger {
                         continue;
                     for (const message of messaging) {
                         let eventType = '';
-                        let messageData = {};
+                        let outputData = {
+                            timestamp: entry.time || Date.now(),
+                            pageId: entry.id,
+                            senderId: (_a = message.sender) === null || _a === void 0 ? void 0 : _a.id,
+                            recipientId: (_b = message.recipient) === null || _b === void 0 ? void 0 : _b.id,
+                        };
+                        // Handle different event types
                         if (message.message) {
-                            const msg = message.message;
-                            eventType = msg.is_echo ? 'message_echoes' : 'messages';
-                            messageData = {
-                                type: eventType,
-                                text: msg.text || '',
-                                ...msg,
-                            };
+                            const msgData = message.message;
+                            if (msgData.is_echo) {
+                                eventType = 'message_echoes';
+                                outputData = {
+                                    ...outputData,
+                                    messageId: msgData.mid,
+                                    text: msgData.text,
+                                    isEcho: true,
+                                };
+                            }
+                            else {
+                                eventType = 'messages';
+                                outputData = {
+                                    ...outputData,
+                                    messageId: msgData.mid,
+                                    text: msgData.text,
+                                    messageData: msgData,
+                                };
+                            }
                         }
                         else if (message.delivery) {
                             eventType = 'message_deliveries';
-                            messageData = {
-                                type: eventType,
+                            outputData = {
+                                ...outputData,
                                 delivery: message.delivery,
                             };
                         }
                         else if (message.read) {
                             eventType = 'message_reads';
-                            messageData = {
-                                type: eventType,
+                            outputData = {
+                                ...outputData,
                                 read: message.read,
                             };
                         }
                         if (selectedEvents.includes(eventType)) {
                             outputs.push({
-                                messageId: (_a = message.message) === null || _a === void 0 ? void 0 : _a.mid,
-                                timestamp: entry.time || Date.now(),
-                                pageId: entry.id,
-                                senderId: (_b = message.sender) === null || _b === void 0 ? void 0 : _b.id,
-                                recipientId: (_c = message.recipient) === null || _c === void 0 ? void 0 : _c.id,
+                                ...outputData,
                                 eventType,
-                                messageData,
                                 rawData: message,
                             });
                         }
                     }
                 }
                 if (outputs.length > 0) {
+                    n8n_workflow_1.LoggerProxy.debug('Processing outputs:', { outputs });
                     return {
                         webhookResponse: 'OK',
                         workflowData: [this.helpers.returnJsonArray(outputs)],
