@@ -124,7 +124,7 @@ export class FacebookMessengerTrigger implements INodeType {
         try {
             const credentials = await this.getCredentials('facebookMessengerApi');
             const httpMethod = this.getNodeParameter('httpMethod') as string;
-
+    
             // Handle GET requests (webhook verification)
             if (httpMethod === 'GET') {
                 const query = this.getQueryData() as IDataObject;
@@ -138,114 +138,109 @@ export class FacebookMessengerTrigger implements INodeType {
                     webhookResponse: 'Verification failed',
                 };
             }
-
-            // Handle POST requests
+    
+            // Handle POST requests from Facebook
             const bodyData = this.getBodyData() as IDataObject;
             const selectedEvents = this.getNodeParameter('events', ['messages']) as string[];
             
-            LoggerProxy.debug('Webhook received data:', { 
-                bodyData,
-                selectedEvents,
-            });
-
-            // Process incoming data
+            LoggerProxy.debug('Facebook Webhook received:', { bodyData });
+    
             if (bodyData.object === 'page') {
                 const entries = bodyData.entry as IDataObject[];
                 if (!entries?.length) {
                     return { webhookResponse: 'OK' };
                 }
-
+    
                 const outputs: IDataObject[] = [];
-
+    
                 for (const entry of entries) {
                     const messaging = entry.messaging as IDataObject[];
                     if (!messaging?.length) continue;
-
-                    for (const message of messaging) {
-                        LoggerProxy.debug('Processing message:', { message });
-
-                        // Base output data
+    
+                    for (const messageEvent of messaging) {
+                        LoggerProxy.debug('Processing message event:', { messageEvent });
+    
                         const baseOutput = {
                             timestamp: entry.time || Date.now(),
                             pageId: entry.id,
-                            senderId: (message.sender as IDataObject)?.id,
-                            recipientId: (message.recipient as IDataObject)?.id,
+                            senderId: (messageEvent.sender as IDataObject)?.id,
+                            recipientId: (messageEvent.recipient as IDataObject)?.id,
                         };
-
-                        // Handle standard message
-                        if (message.message && !(message.message as IDataObject).is_echo) {
-                            const msgData = message.message as IDataObject;
-                            if (selectedEvents.includes('messages')) {
+    
+                        // Determine event type and create output
+                        if (messageEvent.message) {
+                            const msgData = messageEvent.message as IDataObject;
+                            
+                            // Check for echo messages
+                            if (msgData.is_echo) {
+                                if (selectedEvents.includes('message_echoes')) {
+                                    outputs.push({
+                                        ...baseOutput,
+                                        eventType: 'message_echoes',
+                                        messageId: msgData.mid,
+                                        text: msgData.text,
+                                        isEcho: true,
+                                        metadata: msgData.metadata,
+                                        appId: msgData.app_id,
+                                        rawData: messageEvent,
+                                    });
+                                }
+                            } 
+                            // Handle received messages
+                            else if (selectedEvents.includes('messages')) {
                                 outputs.push({
                                     ...baseOutput,
                                     eventType: 'messages',
                                     messageId: msgData.mid,
                                     text: msgData.text,
-                                    messageData: msgData,
-                                    rawData: message,
+                                    attachments: msgData.attachments,
+                                    quickReply: msgData.quick_reply,
+                                    nlp: msgData.nlp,
+                                    rawData: messageEvent,
                                 });
                             }
-                            continue;
                         }
-
-                        // Handle echo
-                        if (message.message && (message.message as IDataObject).is_echo) {
-                            const msgData = message.message as IDataObject;
-                            if (selectedEvents.includes('message_echoes')) {
-                                outputs.push({
-                                    ...baseOutput,
-                                    eventType: 'message_echoes',
-                                    messageId: msgData.mid,
-                                    text: msgData.text,
-                                    isEcho: true,
-                                    rawData: message,
-                                });
-                            }
-                            continue;
-                        }
-
-                        // Handle delivery
-                        if (message.delivery && selectedEvents.includes('message_deliveries')) {
+                        // Handle delivery reports
+                        else if (messageEvent.delivery && selectedEvents.includes('message_deliveries')) {
                             outputs.push({
                                 ...baseOutput,
                                 eventType: 'message_deliveries',
-                                delivery: message.delivery,
-                                rawData: message,
+                                mids: (messageEvent.delivery as IDataObject).mids,
+                                watermark: (messageEvent.delivery as IDataObject).watermark,
+                                rawData: messageEvent,
                             });
-                            continue;
                         }
-
-                        // Handle read
-                        if (message.read && selectedEvents.includes('message_reads')) {
+                        // Handle read reports
+                        else if (messageEvent.read && selectedEvents.includes('message_reads')) {
                             outputs.push({
                                 ...baseOutput,
                                 eventType: 'message_reads',
-                                read: message.read,
-                                rawData: message,
+                                watermark: (messageEvent.read as IDataObject).watermark,
+                                rawData: messageEvent,
                             });
-                            continue;
                         }
                     }
                 }
-
+    
                 if (outputs.length > 0) {
-                    LoggerProxy.debug('Processed outputs:', { outputs });
+                    LoggerProxy.debug('Processed webhook data:', { outputs });
                     return {
                         webhookResponse: 'OK',
                         workflowData: [this.helpers.returnJsonArray(outputs)],
                     };
                 }
             }
-
+    
             return {
                 webhookResponse: 'OK',
             };
-
+    
         } catch (error) {
             LoggerProxy.error('Facebook Messenger Trigger: Error occurred', { error });
             return {
-                webhookResponse: 'OK',
+                webhookResponse: 'OK', // Always return OK to Facebook
             };
         }
     }
+    
 }

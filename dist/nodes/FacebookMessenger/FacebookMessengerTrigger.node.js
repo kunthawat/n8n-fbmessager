@@ -105,14 +105,10 @@ class FacebookMessengerTrigger {
                     webhookResponse: 'Verification failed',
                 };
             }
-            // Handle POST requests
+            // Handle POST requests from Facebook
             const bodyData = this.getBodyData();
             const selectedEvents = this.getNodeParameter('events', ['messages']);
-            n8n_workflow_1.LoggerProxy.debug('Webhook received data:', {
-                bodyData,
-                selectedEvents,
-            });
-            // Process incoming data
+            n8n_workflow_1.LoggerProxy.debug('Facebook Webhook received:', { bodyData });
             if (bodyData.object === 'page') {
                 const entries = bodyData.entry;
                 if (!(entries === null || entries === void 0 ? void 0 : entries.length)) {
@@ -123,69 +119,69 @@ class FacebookMessengerTrigger {
                     const messaging = entry.messaging;
                     if (!(messaging === null || messaging === void 0 ? void 0 : messaging.length))
                         continue;
-                    for (const message of messaging) {
-                        n8n_workflow_1.LoggerProxy.debug('Processing message:', { message });
-                        // Base output data
+                    for (const messageEvent of messaging) {
+                        n8n_workflow_1.LoggerProxy.debug('Processing message event:', { messageEvent });
                         const baseOutput = {
                             timestamp: entry.time || Date.now(),
                             pageId: entry.id,
-                            senderId: (_a = message.sender) === null || _a === void 0 ? void 0 : _a.id,
-                            recipientId: (_b = message.recipient) === null || _b === void 0 ? void 0 : _b.id,
+                            senderId: (_a = messageEvent.sender) === null || _a === void 0 ? void 0 : _a.id,
+                            recipientId: (_b = messageEvent.recipient) === null || _b === void 0 ? void 0 : _b.id,
                         };
-                        // Handle standard message
-                        if (message.message && !message.message.is_echo) {
-                            const msgData = message.message;
-                            if (selectedEvents.includes('messages')) {
+                        // Determine event type and create output
+                        if (messageEvent.message) {
+                            const msgData = messageEvent.message;
+                            // Check for echo messages
+                            if (msgData.is_echo) {
+                                if (selectedEvents.includes('message_echoes')) {
+                                    outputs.push({
+                                        ...baseOutput,
+                                        eventType: 'message_echoes',
+                                        messageId: msgData.mid,
+                                        text: msgData.text,
+                                        isEcho: true,
+                                        metadata: msgData.metadata,
+                                        appId: msgData.app_id,
+                                        rawData: messageEvent,
+                                    });
+                                }
+                            }
+                            // Handle received messages
+                            else if (selectedEvents.includes('messages')) {
                                 outputs.push({
                                     ...baseOutput,
                                     eventType: 'messages',
                                     messageId: msgData.mid,
                                     text: msgData.text,
-                                    messageData: msgData,
-                                    rawData: message,
+                                    attachments: msgData.attachments,
+                                    quickReply: msgData.quick_reply,
+                                    nlp: msgData.nlp,
+                                    rawData: messageEvent,
                                 });
                             }
-                            continue;
                         }
-                        // Handle echo
-                        if (message.message && message.message.is_echo) {
-                            const msgData = message.message;
-                            if (selectedEvents.includes('message_echoes')) {
-                                outputs.push({
-                                    ...baseOutput,
-                                    eventType: 'message_echoes',
-                                    messageId: msgData.mid,
-                                    text: msgData.text,
-                                    isEcho: true,
-                                    rawData: message,
-                                });
-                            }
-                            continue;
-                        }
-                        // Handle delivery
-                        if (message.delivery && selectedEvents.includes('message_deliveries')) {
+                        // Handle delivery reports
+                        else if (messageEvent.delivery && selectedEvents.includes('message_deliveries')) {
                             outputs.push({
                                 ...baseOutput,
                                 eventType: 'message_deliveries',
-                                delivery: message.delivery,
-                                rawData: message,
+                                mids: messageEvent.delivery.mids,
+                                watermark: messageEvent.delivery.watermark,
+                                rawData: messageEvent,
                             });
-                            continue;
                         }
-                        // Handle read
-                        if (message.read && selectedEvents.includes('message_reads')) {
+                        // Handle read reports
+                        else if (messageEvent.read && selectedEvents.includes('message_reads')) {
                             outputs.push({
                                 ...baseOutput,
                                 eventType: 'message_reads',
-                                read: message.read,
-                                rawData: message,
+                                watermark: messageEvent.read.watermark,
+                                rawData: messageEvent,
                             });
-                            continue;
                         }
                     }
                 }
                 if (outputs.length > 0) {
-                    n8n_workflow_1.LoggerProxy.debug('Processed outputs:', { outputs });
+                    n8n_workflow_1.LoggerProxy.debug('Processed webhook data:', { outputs });
                     return {
                         webhookResponse: 'OK',
                         workflowData: [this.helpers.returnJsonArray(outputs)],
@@ -199,7 +195,7 @@ class FacebookMessengerTrigger {
         catch (error) {
             n8n_workflow_1.LoggerProxy.error('Facebook Messenger Trigger: Error occurred', { error });
             return {
-                webhookResponse: 'OK',
+                webhookResponse: 'OK', // Always return OK to Facebook
             };
         }
     }
