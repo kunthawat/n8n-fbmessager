@@ -3,7 +3,8 @@ import {
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
-	NodeOperationError,
+	NodeConnectionType,
+	IDataObject,
 } from 'n8n-workflow';
 
 export class FacebookMessengerAction implements INodeType {
@@ -17,8 +18,8 @@ export class FacebookMessengerAction implements INodeType {
 		defaults: {
 			name: 'Facebook Messenger',
 		},
-		inputs: ['main'],
-		outputs: ['main'],
+		inputs: [{ type: NodeConnectionType.Main }],
+		outputs: [{ type: NodeConnectionType.Main }],
 		credentials: [
 			{
 				name: 'facebookApi',
@@ -61,7 +62,6 @@ export class FacebookMessengerAction implements INodeType {
 				required: true,
 				description: 'The ID of the message recipient',
 			},
-			// Text Message Options
 			{
 				displayName: 'Message Text',
 				name: 'messageText',
@@ -75,86 +75,6 @@ export class FacebookMessengerAction implements INodeType {
 				required: true,
 				description: 'The text to send',
 			},
-			// Template Message Options
-			{
-				displayName: 'Template Name',
-				name: 'templateName',
-				type: 'string',
-				default: '',
-				displayOptions: {
-					show: {
-						operation: ['sendTemplate'],
-					},
-				},
-				required: true,
-				description: 'Name of the template to use',
-			},
-			{
-				displayName: 'Language Code',
-				name: 'languageCode',
-				type: 'string',
-				default: 'en',
-				displayOptions: {
-					show: {
-						operation: ['sendTemplate'],
-					},
-				},
-				required: true,
-				description: 'Language code (e.g., en, es, fr)',
-			},
-			{
-				displayName: 'Template Variables',
-				name: 'templateVariables',
-				type: 'json',
-				default: '{}',
-				displayOptions: {
-					show: {
-						operation: ['sendTemplate'],
-					},
-				},
-				required: true,
-				description: 'Variables to replace in the template',
-			},
-			// Media Options
-			{
-				displayName: 'Media Type',
-				name: 'mediaType',
-				type: 'options',
-				displayOptions: {
-					show: {
-						operation: ['sendMedia'],
-					},
-				},
-				options: [
-					{
-						name: 'Image',
-						value: 'image',
-					},
-					{
-						name: 'Video',
-						value: 'video',
-					},
-					{
-						name: 'File',
-						value: 'file',
-					},
-				],
-				default: 'image',
-				description: 'Type of media to send',
-			},
-			{
-				displayName: 'Media URL',
-				name: 'mediaUrl',
-				type: 'string',
-				default: '',
-				displayOptions: {
-					show: {
-						operation: ['sendMedia'],
-					},
-				},
-				required: true,
-				description: 'URL of the media to send',
-			},
 		],
 	};
 
@@ -166,44 +86,18 @@ export class FacebookMessengerAction implements INodeType {
 		try {
 			for (let i = 0; i < items.length; i++) {
 				const recipientId = this.getNodeParameter('recipientId', i) as string;
-				let messageData: any = {
+				const messageData: IDataObject = {
 					messaging_type: 'RESPONSE',
 					recipient: {
 						id: recipientId,
 					},
+					message: {},
 				};
 
 				if (operation === 'sendMessage') {
 					const messageText = this.getNodeParameter('messageText', i) as string;
 					messageData.message = {
 						text: messageText,
-					};
-				} else if (operation === 'sendTemplate') {
-					const templateName = this.getNodeParameter('templateName', i) as string;
-					const languageCode = this.getNodeParameter('languageCode', i) as string;
-					const templateVariables = this.getNodeParameter('templateVariables', i) as string;
-
-					messageData.message = {
-						template: {
-							name: templateName,
-							language: {
-								code: languageCode,
-							},
-							components: JSON.parse(templateVariables),
-						},
-					};
-				} else if (operation === 'sendMedia') {
-					const mediaType = this.getNodeParameter('mediaType', i) as string;
-					const mediaUrl = this.getNodeParameter('mediaUrl', i) as string;
-
-					messageData.message = {
-						attachment: {
-							type: mediaType,
-							payload: {
-								url: mediaUrl,
-								is_reusable: true,
-							},
-						},
 					};
 				}
 
@@ -218,10 +112,7 @@ export class FacebookMessengerAction implements INodeType {
 				});
 
 				returnData.push({
-					json: response,
-					pairedItem: {
-						item: i,
-					},
+					json: response as IDataObject,
 				});
 			}
 		} catch (error) {
@@ -229,9 +120,6 @@ export class FacebookMessengerAction implements INodeType {
 				returnData.push({
 					json: {
 						error: error.message,
-					},
-					pairedItem: {
-						item: 0,
 					},
 				});
 			} else {

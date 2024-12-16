@@ -1,10 +1,11 @@
 import {
 	INodeType,
 	INodeTypeDescription,
-	ITriggerFunctions,
-	ITriggerResponse,
 	IWebhookFunctions,
-	NodeOperationError,
+	IWebhookResponseData,
+	NodeConnectionType,
+	IDataObject,
+	INodeExecutionData,
 } from 'n8n-workflow';
 
 export class FacebookMessengerTrigger implements INodeType {
@@ -19,7 +20,7 @@ export class FacebookMessengerTrigger implements INodeType {
 			name: 'Facebook Messenger Trigger',
 		},
 		inputs: [],
-		outputs: ['main'],
+		outputs: [{ type: NodeConnectionType.Main }],
 		credentials: [
 			{
 				name: 'facebookApi',
@@ -59,92 +60,63 @@ export class FacebookMessengerTrigger implements INodeType {
 				default: ['messages'],
 				required: true,
 			},
-			{
-				displayName: 'Additional Fields',
-				name: 'additionalFields',
-				type: 'collection',
-				placeholder: 'Add Field',
-				default: {},
-				options: [
-					{
-						displayName: 'Include Sender Info',
-						name: 'includeSenderInfo',
-						type: 'boolean',
-						default: true,
-						description: 'Whether to include sender information in the output',
-					},
-				],
-			},
 		],
 	};
 
-	async webhook(this: IWebhookFunctions): Promise<ITriggerResponse> {
-		const webhookData = this.getWebhookName();
-		const events = this.getNodeParameter('events') as string[];
+	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
 		const req = this.getRequestObject();
+		const headerData = this.getHeaderData();
+		const events = this.getNodeParameter('events') as string[];
 
 		// Verify webhook
 		if (req.method === 'GET') {
-			const mode = this.getQueryParameter('hub.mode');
-			const token = this.getQueryParameter('hub.verify_token');
-			const challenge = this.getQueryParameter('hub.challenge');
+			const mode = headerData['hub.mode'];
+			const token = headerData['hub.verify_token'];
+			const challenge = headerData['hub.challenge'];
 
 			if (mode === 'subscribe' && token === process.env.FACEBOOK_VERIFY_TOKEN) {
 				return {
 					webhookResponse: challenge,
 				};
 			}
-			throw new NodeOperationError(this.getNode(), 'Invalid verification token');
+			return {
+				webhookResponse: 'Forbidden',
+			};
 		}
 
 		// Process webhook payload
-		const body = this.getBodyData();
+		const body = this.getBodyData() as IDataObject;
 		if (body.object === 'page') {
-			const returnData: IDataObject[] = [];
+			const returnData: INodeExecutionData[] = [];
+			const entries = body.entry as IDataObject[];
 
-			for (const entry of body.entry) {
-				const messaging = entry.messaging[0];
+			for (const entry of entries) {
+				const messaging = (entry.messaging as IDataObject[])[0];
 
 				if (messaging.message && events.includes('messages')) {
 					returnData.push({
-						messageId: messaging.message.mid,
-						messageText: messaging.message.text,
-						senderId: messaging.sender.id,
-						recipientId: messaging.recipient.id,
-						timestamp: messaging.timestamp,
-						eventType: 'message_received',
-					});
-				}
-
-				if (messaging.delivery && events.includes('message_deliveries')) {
-					returnData.push({
-						messageIds: messaging.delivery.mids,
-						senderId: messaging.sender.id,
-						recipientId: messaging.recipient.id,
-						timestamp: messaging.delivery.watermark,
-						eventType: 'message_delivered',
-					});
-				}
-
-				if (messaging.read && events.includes('message_reads')) {
-					returnData.push({
-						senderId: messaging.sender.id,
-						recipientId: messaging.recipient.id,
-						timestamp: messaging.read.watermark,
-						eventType: 'message_read',
+						json: {
+							messageId: (messaging.message as IDataObject).mid,
+							messageText: (messaging.message as IDataObject).text,
+							senderId: (messaging.sender as IDataObject).id,
+							recipientId: (messaging.recipient as IDataObject).id,
+							timestamp: messaging.timestamp,
+							eventType: 'message_received',
+						},
 					});
 				}
 			}
 
 			if (returnData.length) {
 				return {
-					workflowData: [returnData],
+					webhookResponse: { success: true },
+					workflowData: [returnData], // Wrap returnData in an array to match INodeExecutionData[][]
 				};
 			}
 		}
 
 		return {
-			noWebhookResponse: true,
+			webhookResponse: { success: true },
 		};
 	}
 }
