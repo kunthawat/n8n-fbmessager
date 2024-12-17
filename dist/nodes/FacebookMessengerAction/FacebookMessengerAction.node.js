@@ -35,12 +35,6 @@ class FacebookMessengerAction {
                             action: 'Send a message',
                         },
                         {
-                            name: 'Send Template',
-                            value: 'sendTemplate',
-                            description: 'Send a template message',
-                            action: 'Send a template message',
-                        },
-                        {
                             name: 'Send Media',
                             value: 'sendMedia',
                             description: 'Send media (image, video, file)',
@@ -53,9 +47,9 @@ class FacebookMessengerAction {
                     displayName: 'Recipient ID',
                     name: 'recipientId',
                     type: 'string',
-                    default: '',
+                    default: '={{$json["senderId"]}}',
                     required: true,
-                    description: 'The ID of the message recipient (Sender ID)',
+                    description: 'The ID of the message recipient (Sender ID from the trigger node)',
                 },
                 {
                     displayName: 'Message Text',
@@ -70,10 +64,50 @@ class FacebookMessengerAction {
                     required: true,
                     description: 'The text to send',
                 },
+                {
+                    displayName: 'Media Type',
+                    name: 'mediaType',
+                    type: 'options',
+                    displayOptions: {
+                        show: {
+                            operation: ['sendMedia'],
+                        },
+                    },
+                    options: [
+                        {
+                            name: 'Image',
+                            value: 'image',
+                        },
+                        {
+                            name: 'Video',
+                            value: 'video',
+                        },
+                        {
+                            name: 'File',
+                            value: 'file',
+                        },
+                    ],
+                    default: 'image',
+                    description: 'The type of media to send',
+                },
+                {
+                    displayName: 'Media URL',
+                    name: 'mediaUrl',
+                    type: 'string',
+                    displayOptions: {
+                        show: {
+                            operation: ['sendMedia'],
+                        },
+                    },
+                    default: '={{$json["url"]}}',
+                    required: true,
+                    description: 'The URL of the media file to send (must be publicly accessible)',
+                },
             ],
         };
     }
     async execute() {
+        var _a, _b, _c;
         const items = this.getInputData();
         const returnData = [];
         const credentials = await this.getCredentials('facebookApi');
@@ -81,10 +115,11 @@ class FacebookMessengerAction {
         try {
             for (let i = 0; i < items.length; i++) {
                 const recipientId = this.getNodeParameter('recipientId', i);
+                const cleanRecipientId = recipientId.trim().replace(/['"]/g, '');
                 const messageData = {
                     messaging_type: 'RESPONSE',
                     recipient: {
-                        id: recipientId,
+                        id: cleanRecipientId,
                     },
                     message: {},
                 };
@@ -94,26 +129,60 @@ class FacebookMessengerAction {
                         text: messageText,
                     };
                 }
-                const response = await this.helpers.httpRequest({
-                    method: 'POST',
-                    url: 'https://graph.facebook.com/v13.0/me/messages',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    qs: {
-                        access_token: credentials.accessToken,
-                    },
-                    body: messageData,
-                });
-                returnData.push({
-                    json: response,
-                });
+                else if (operation === 'sendMedia') {
+                    const mediaType = this.getNodeParameter('mediaType', i);
+                    const mediaUrl = this.getNodeParameter('mediaUrl', i);
+                    messageData.message = {
+                        attachment: {
+                            type: mediaType,
+                            payload: {
+                                url: mediaUrl,
+                                is_reusable: true,
+                            },
+                        },
+                    };
+                }
+                try {
+                    const response = await this.helpers.httpRequest({
+                        method: 'POST',
+                        url: 'https://graph.facebook.com/v17.0/me/messages',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        qs: {
+                            access_token: credentials.accessToken,
+                        },
+                        body: messageData,
+                    });
+                    returnData.push({
+                        json: {
+                            success: true,
+                            ...response,
+                        },
+                    });
+                }
+                catch (error) {
+                    console.error('Facebook API Error:', {
+                        statusCode: error.statusCode,
+                        message: error.message,
+                        recipientId: cleanRecipientId,
+                        response: (_a = error.response) === null || _a === void 0 ? void 0 : _a.body,
+                    });
+                    if ((_b = error.response) === null || _b === void 0 ? void 0 : _b.body) {
+                        const errorBody = typeof error.response.body === 'string'
+                            ? JSON.parse(error.response.body)
+                            : error.response.body;
+                        throw new Error(`Facebook API Error: ${((_c = errorBody.error) === null || _c === void 0 ? void 0 : _c.message) || error.message}`);
+                    }
+                    throw error;
+                }
             }
         }
         catch (error) {
             if (this.continueOnFail()) {
                 returnData.push({
                     json: {
+                        success: false,
                         error: error.message,
                     },
                 });
