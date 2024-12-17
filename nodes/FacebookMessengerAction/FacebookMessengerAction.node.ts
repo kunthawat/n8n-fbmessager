@@ -4,7 +4,6 @@ import {
     INodeType,
     INodeTypeDescription,
     NodeConnectionType,
-    IDataObject,
 } from 'n8n-workflow';
 
 export class FacebookMessengerAction implements INodeType {
@@ -106,7 +105,7 @@ export class FacebookMessengerAction implements INodeType {
                 },
                 default: '={{$json["url"]}}',
                 required: true,
-                description: 'The URL of the media file to send (must be publicly accessible)',
+                description: 'The URL of the media file to send (must be publicly accessible HTTPS URL)',
             },
         ],
     };
@@ -122,37 +121,19 @@ export class FacebookMessengerAction implements INodeType {
                 const recipientId = this.getNodeParameter('recipientId', i) as string;
                 const cleanRecipientId = recipientId.trim().replace(/['"]/g, '');
 
-                const messageData: IDataObject = {
-                    messaging_type: 'RESPONSE',
-                    recipient: {
-                        id: cleanRecipientId,
-                    },
-                    message: {},
-                };
-
                 if (operation === 'sendMessage') {
                     const messageText = this.getNodeParameter('messageText', i) as string;
-                    messageData.message = {
-                        text: messageText,
-                    };
-                } else if (operation === 'sendMedia') {
-                    const mediaType = this.getNodeParameter('mediaType', i) as string;
-                    const mediaUrl = this.getNodeParameter('mediaUrl', i) as string;
-
-                    messageData.message = {
-                        attachment: {
-                            type: mediaType,
-                            payload: {
-                                url: mediaUrl,
-                                is_reusable: true,
-                            },
+                    const messageData = {
+                        messaging_type: 'RESPONSE',
+                        recipient: {
+                            id: cleanRecipientId,
+                        },
+                        message: {
+                            text: messageText,
                         },
                     };
-                }
 
-                try {
-                    // Make API call to send message
-                    const response = await this.helpers.httpRequest({
+                    const response = await this.helpers.request({
                         method: 'POST',
                         url: 'https://graph.facebook.com/v17.0/me/messages',
                         headers: {
@@ -162,35 +143,107 @@ export class FacebookMessengerAction implements INodeType {
                             access_token: credentials.accessToken,
                         },
                         body: messageData,
+                        json: true,
                     });
 
                     returnData.push({
                         json: {
                             success: true,
-                            ...response as IDataObject,
+                            ...response,
                         },
                     });
-                } catch (error) {
-                    console.error('Facebook API Error:', {
-                        statusCode: error.statusCode,
-                        message: error.message,
-                        recipientId: cleanRecipientId,
-                        response: error.response?.body,
+                } else if (operation === 'sendMedia') {
+                    const mediaType = this.getNodeParameter('mediaType', i) as string;
+                    const mediaUrl = this.getNodeParameter('mediaUrl', i) as string;
+
+                    // First, attach the media to get an attachment ID
+                    const attachmentData = {
+                        message: {
+                            attachment: {
+                                type: mediaType,
+                                payload: {
+                                    url: mediaUrl,
+                                    is_reusable: true,
+                                },
+                            },
+                        },
+                    };
+
+                    // Upload the attachment
+                    const attachmentResponse = await this.helpers.request({
+                        method: 'POST',
+                        url: 'https://graph.facebook.com/v17.0/me/message_attachments',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        qs: {
+                            access_token: credentials.accessToken,
+                        },
+                        body: attachmentData,
+                        json: true,
                     });
 
-                    if (error.response?.body) {
-                        const errorBody = typeof error.response.body === 'string'
-                            ? JSON.parse(error.response.body)
-                            : error.response.body;
-
-                        throw new Error(
-                            `Facebook API Error: ${errorBody.error?.message || error.message}`
-                        );
+                    if (!attachmentResponse.attachment_id) {
+                        throw new Error('Failed to upload attachment');
                     }
-                    throw error;
+
+                    // Send the message with the attachment ID
+                    const messageData = {
+                        messaging_type: 'RESPONSE',
+                        recipient: {
+                            id: cleanRecipientId,
+                        },
+                        message: {
+                            attachment: {
+                                type: mediaType,
+                                payload: {
+                                    attachment_id: attachmentResponse.attachment_id,
+                                },
+                            },
+                        },
+                    };
+
+                    const response = await this.helpers.request({
+                        method: 'POST',
+                        url: 'https://graph.facebook.com/v17.0/me/messages',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        qs: {
+                            access_token: credentials.accessToken,
+                        },
+                        body: messageData,
+                        json: true,
+                    });
+
+                    returnData.push({
+                        json: {
+                            success: true,
+                            attachmentId: attachmentResponse.attachment_id,
+                            ...response,
+                        },
+                    });
                 }
             }
         } catch (error) {
+            console.error('Facebook API Error:', {
+                statusCode: error.statusCode,
+                message: error.message,
+                response: error.response?.body,
+            });
+
+            if (error.response?.body) {
+                const errorBody = typeof error.response.body === 'string'
+                    ? JSON.parse(error.response.body)
+                    : error.response.body;
+
+                throw new Error(
+                    `Facebook API Error: ${errorBody.error?.message || error.message}. ${
+                        errorBody.error?.error_user_msg || ''
+                    }`
+                );
+            }
+
             if (this.continueOnFail()) {
                 returnData.push({
                     json: {
