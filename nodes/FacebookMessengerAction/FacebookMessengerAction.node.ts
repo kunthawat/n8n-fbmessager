@@ -10,7 +10,7 @@ export class FacebookMessengerAction implements INodeType {
     description: INodeTypeDescription = {
         displayName: 'Facebook Messenger Action',
         name: 'facebookMessengerAction',
-        icon: 'file:facebook.svg',
+        icon: 'file:FacebookMessengerAction.svg',
         group: ['transform'],
         version: 1,
         description: 'Send messages through Facebook Messenger',
@@ -47,7 +47,7 @@ export class FacebookMessengerAction implements INodeType {
                 type: 'string',
                 default: '',
                 required: true,
-                description: 'The PSID of the message recipient',
+                description: 'The PSID of the message recipient (Sender ID)',
                 displayOptions: {
                     show: {
                         operation: ['sendMessage'],

@@ -6,7 +6,7 @@ class FacebookMessengerTrigger {
         this.description = {
             displayName: 'Facebook Messenger Trigger',
             name: 'facebookMessengerTrigger',
-            icon: 'file:facebook.svg',
+            icon: 'file:FacebookMessengerTrigger.svg',
             group: ['trigger'],
             version: 1,
             subtitle: '={{$parameter["operation"]}}',

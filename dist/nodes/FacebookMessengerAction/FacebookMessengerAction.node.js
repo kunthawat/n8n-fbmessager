@@ -6,7 +6,7 @@ class FacebookMessengerAction {
         this.description = {
             displayName: 'Facebook Messenger Action',
             name: 'facebookMessengerAction',
-            icon: 'file:facebook.svg',
+            icon: 'file:FacebookMessengerAction.svg',
             group: ['transform'],
             version: 1,
             description: 'Send messages through Facebook Messenger',
@@ -43,7 +43,7 @@ class FacebookMessengerAction {
                     type: 'string',
                     default: '',
                     required: true,
-                    description: 'The PSID of the message recipient',
+                    description: 'The PSID of the message recipient (Sender ID)',
                     displayOptions: {
                         show: {
                             operation: ['sendMessage'],
